@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/src/assets/hero.png" alt="Gantry Banner" width="600" />
+</p>
+
 # Gantry
 
 **Gantry** is an internal web-based application designed to run on a Proxmox LXC container. It allows you to dynamically deploy new LXC containers on Proxmox cluster hosts by inputting system configurations (CPU, RAM, Swap, Disks, Extra Disks, Networking) and generating/executing Terraform pipelines on-demand.
