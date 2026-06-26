@@ -216,3 +216,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / Frontend Build
+node_modules/
+dist/
+.eslintcache
+*.local
+
+# Terraform & Deployments
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.log
+.terraform.lock.hcl
+
+# Local secrets and application database
+backend/config.json
+backend/db.json
+backend/deployments/
+

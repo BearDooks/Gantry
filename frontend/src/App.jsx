@@ -1,0 +1,1281 @@
+import React, { useState, useEffect } from 'react';
+
+// Inline SVG Icons for self-contained, robust visual design
+const Icons = {
+  Cpu: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="15" x2="23" y2="15"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="15" x2="4" y2="15"/></svg>
+  ),
+  Ram: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+  ),
+  HardDrive: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+  ),
+  Network: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+  ),
+  Settings: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  ),
+  Activity: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  ),
+  Plus: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  ),
+  Trash: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+  ),
+  ExternalLink: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+  ),
+  Info: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  ),
+  Archive: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+  ),
+  FolderOpen: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M2 10h20"/></svg>
+  ),
+  Gantry: ({ size = 28 }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.75rem', verticalAlign: 'middle', color: 'var(--accent-primary)' }}>
+      <path d="M3 22V4h18v18" />
+      <path d="M3 8h4" />
+      <path d="M17 8h4" />
+      <path d="M3 4l4 4" />
+      <path d="M21 4l-4 4" />
+      <rect x="10" y="4" width="4" height="3" rx="0.5" fill="currentColor" opacity="0.3" />
+      <path d="M12 7v5" />
+      <rect x="8" y="12" width="8" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 15h8" />
+    </svg>
+  )
+};
+
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000/api`;
+
+function App() {
+  const [activeTab, setActiveTab] = useState('deploy');
+  const [config, setConfig] = useState({
+    pm_api_url: '',
+    pm_api_token_id: '',
+    pm_api_token_secret: '',
+    node_name: 'pve',
+    template_storage: 'local',
+    default_bridge: 'vmbr0',
+    excluded_storages: '',
+    excluded_bridges: '',
+    default_ssh_keys: '',
+    default_cpu_cores: 1,
+    default_memory: 1024,
+    default_swap: 512,
+    default_disk_size: 8,
+    default_dns_server: '',
+    default_dns_domain: '',
+    default_unprivileged: true
+  });
+  
+  const [templates, setTemplates] = useState([]);
+  const [storages, setStorages] = useState([]);
+  const [bridges, setBridges] = useState([]);
+  const [allStorages, setAllStorages] = useState([]);
+  const [allBridges, setAllBridges] = useState([]);
+  const [deployments, setDeployments] = useState([]);
+  
+  const [isTemplatesLoading, setIsTemplatesLoading] = useState(false);
+  const [isAllResourcesLoading, setIsAllResourcesLoading] = useState(false);
+  const [isStoragesLoading, setIsStoragesLoading] = useState(false);
+  const [isBridgesLoading, setIsBridgesLoading] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [isTestingConfig, setIsTestingConfig] = useState(false);
+  
+  const [notification, setNotification] = useState(null);
+  
+  // Terraform logs viewer state
+  const [activeLogId, setActiveLogId] = useState(null);
+  const [logContent, setLogContent] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [enableCustomScript, setEnableCustomScript] = useState(false);
+
+  // Reset page when filtering changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, showArchived]);
+  
+  // Deployment Form State
+  const [formData, setFormData] = useState({
+    vm_id: 100,
+    hostname: '',
+    password: '',
+    ssh_keys: '',
+    template_file_id: '',
+    cpu_cores: 1,
+    memory: 1024,
+    swap: 512,
+    disk_storage: '',
+    disk_size: 8,
+    extra_disks: [],
+    predefined_apps: [],
+    custom_script: '',
+    unprivileged: true,
+    network: {
+      type: 'dhcp',
+      bridge: 'vmbr0',
+      ip: '',
+      gateway: '',
+      vlan: '',
+      dns_server: '',
+      dns_domain: ''
+    }
+  });
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Fetch initial app configuration
+  useEffect(() => {
+    fetch(`${API_BASE}/config`)
+      .then(res => res.json())
+      .then(data => {
+        setConfig(data);
+        setFormData(prev => ({
+          ...prev,
+          cpu_cores: data.default_cpu_cores !== undefined ? parseInt(data.default_cpu_cores) : prev.cpu_cores,
+          memory: data.default_memory !== undefined ? parseInt(data.default_memory) : prev.memory,
+          swap: data.default_swap !== undefined ? parseInt(data.default_swap) : prev.swap,
+          disk_size: data.default_disk_size !== undefined ? parseInt(data.default_disk_size) : prev.disk_size,
+          ssh_keys: data.default_ssh_keys || prev.ssh_keys,
+          unprivileged: data.default_unprivileged !== undefined ? !!data.default_unprivileged : prev.unprivileged,
+          network: {
+            ...prev.network,
+            bridge: data.default_bridge || prev.network.bridge,
+            dns_server: data.default_dns_server || prev.network.dns_server,
+            dns_domain: data.default_dns_domain || prev.network.dns_domain
+          }
+        }));
+      })
+      .catch(() => showNotification('Could not load configuration', 'error'));
+  }, []);
+
+  const loadAllResourcesForExclusions = () => {
+    if (!config.pm_api_url) return;
+    setIsAllResourcesLoading(true);
+    
+    const fetchStorages = fetch(`${API_BASE}/proxmox/storages?all=true`).then(res => res.json());
+    const fetchBridges = fetch(`${API_BASE}/proxmox/bridges?all=true`).then(res => res.json());
+
+    Promise.all([fetchStorages, fetchBridges])
+      .then(([storagesData, bridgesData]) => {
+        setAllStorages(storagesData.storages || []);
+        setAllBridges(bridgesData.bridges || []);
+      })
+      .catch(() => {})
+      .finally(() => setIsAllResourcesLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      loadAllResourcesForExclusions();
+    }
+  }, [activeTab, config.pm_api_url]);
+
+  // Fetch templates, storages, and deployments
+  const loadProxmoxData = () => {
+    setIsTemplatesLoading(true);
+    fetch(`${API_BASE}/proxmox/templates`)
+      .then(res => res.json())
+      .then(data => {
+        setTemplates(data.templates || []);
+        if (data.templates && data.templates.length > 0 && !formData.template_file_id) {
+          setFormData(prev => ({ ...prev, template_file_id: data.templates[0].volid }));
+        }
+      })
+      .catch(() => showNotification('Error fetching templates', 'error'))
+      .finally(() => setIsTemplatesLoading(false));
+
+    setIsStoragesLoading(true);
+    fetch(`${API_BASE}/proxmox/storages`)
+      .then(res => res.json())
+      .then(data => {
+        setStorages(data.storages || []);
+        if (data.storages && data.storages.length > 0 && !formData.disk_storage) {
+          setFormData(prev => ({ ...prev, disk_storage: data.storages[0].name }));
+        }
+      })
+      .catch(() => showNotification('Error fetching storages', 'error'))
+      .finally(() => setIsStoragesLoading(false));
+
+    setIsBridgesLoading(true);
+    fetch(`${API_BASE}/proxmox/bridges`)
+      .then(res => res.json())
+      .then(data => {
+        setBridges(data.bridges || []);
+        // Only set default if no bridge is selected yet, or default_bridge config isn't loaded
+        if (data.bridges && data.bridges.length > 0 && !formData.network.bridge) {
+          setFormData(prev => ({
+            ...prev,
+            network: { ...prev.network, bridge: data.bridges[0].name }
+          }));
+        }
+      })
+      .catch(() => showNotification('Error fetching network bridges', 'error'))
+      .finally(() => setIsBridgesLoading(false));
+
+    fetch(`${API_BASE}/proxmox/next-id`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.next_id) {
+          setFormData(prev => ({ ...prev, vm_id: data.next_id }));
+        }
+      })
+      .catch(() => {});
+  };
+
+  const loadDeployments = () => {
+    fetch(`${API_BASE}/deployments`)
+      .then(res => res.json())
+      .then(data => {
+        setDeployments(data);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadProxmoxData();
+    loadDeployments();
+    
+    // Poll deployments status every 5 seconds
+    const interval = setInterval(loadDeployments, 5000);
+    return () => clearInterval(interval);
+  }, [config.pm_api_url]);
+
+  // Handle settings save
+  const handleSaveConfig = (e) => {
+    e.preventDefault();
+    fetch(`${API_BASE}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+      .then(res => res.json())
+      .then(data => {
+        showNotification(data.message);
+        loadProxmoxData();
+      })
+      .catch(() => showNotification('Failed to save settings', 'error'));
+  };
+
+  // Handle settings wipe/clear
+  const handleClearConfig = () => {
+    if (!window.confirm('Are you sure you want to clear all settings? This will reset your Proxmox API integration and all default parameters.')) {
+      return;
+    }
+    fetch(`${API_BASE}/config/clear`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        showNotification(data.message);
+        setConfig(data.config);
+        setTemplates([]);
+        setStorages([]);
+        setBridges([]);
+        setAllStorages([]);
+        setAllBridges([]);
+      })
+      .catch(() => showNotification('Failed to clear settings', 'error'));
+  };
+
+  // Test configuration endpoint
+  const handleTestConfig = () => {
+    setIsTestingConfig(true);
+    fetch(`${API_BASE}/proxmox/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+      .then(async res => {
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showNotification('Proxmox cluster successfully connected! Templates pulled.');
+          loadProxmoxData();
+        } else {
+          showNotification(`Connection test failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+      })
+      .catch((err) => showNotification(`Error connecting: ${err.message}`, 'error'))
+      .finally(() => setIsTestingConfig(false));
+  };
+
+  // Deploy submit
+  const handleDeploy = (e) => {
+    e.preventDefault();
+
+    // 1. Hostname validation (RFC 1123 DNS hostname rules)
+    const hostnameRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$/;
+    if (!hostnameRegex.test(formData.hostname)) {
+      showNotification('Invalid Hostname. Use alphanumeric characters and hyphens only.', 'error');
+      return;
+    }
+
+    // 2. VM ID validation
+    if (!formData.vm_id || formData.vm_id < 100) {
+      showNotification('VM ID must be 100 or greater.', 'error');
+      return;
+    }
+
+    // 3. Network validation (CIDR / Gateway / DNS)
+    if (formData.network.type === 'static') {
+      const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      const cidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:3[0-2]|[1-2]?[0-9])$/;
+      
+      if (!cidrRegex.test(formData.network.ip)) {
+        showNotification('Invalid IPv4 CIDR address. Format must be IP/Mask (e.g., 192.168.1.50/24).', 'error');
+        return;
+      }
+      
+      if (formData.network.gateway && !ipRegex.test(formData.network.gateway)) {
+        showNotification('Invalid Gateway IP address.', 'error');
+        return;
+      }
+      
+      if (formData.network.dns_server && !ipRegex.test(formData.network.dns_server)) {
+        showNotification('Invalid DNS Server IP address.', 'error');
+        return;
+      }
+    }
+
+    setIsDeploying(true);
+
+    const payload = {
+      ...formData,
+      network: {
+        ...formData.network,
+        ip: formData.network.type === 'dhcp' ? 'dhcp' : formData.network.ip
+      }
+    };
+
+    fetch(`${API_BASE}/deployments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(data => {
+        showNotification('Deployment pipeline initiated successfully');
+        setActiveTab('dashboard');
+        loadDeployments();
+      })
+      .catch(() => showNotification('Failed to launch deployment job', 'error'))
+      .finally(() => setIsDeploying(false));
+  };
+
+  // Destroy deployment
+  const handleDestroy = (id) => {
+    if (!window.confirm('Are you absolutely sure you want to destroy this LXC container? All data will be lost.')) {
+      return;
+    }
+    fetch(`${API_BASE}/deployments/${id}/destroy`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        showNotification('Tear-down job submitted');
+        loadDeployments();
+      })
+      .catch(() => showNotification('Failed to submit destroy request', 'error'));
+  };
+
+  // Archive deployment
+  const handleArchive = (id) => {
+    fetch(`${API_BASE}/deployments/${id}/archive`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        showNotification(data.message || 'Deployment archived');
+        loadDeployments();
+      })
+      .catch(() => showNotification('Failed to archive deployment', 'error'));
+  };
+
+  // Unarchive deployment
+  const handleUnarchive = (id) => {
+    fetch(`${API_BASE}/deployments/${id}/unarchive`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        showNotification(data.message || 'Deployment restored');
+        loadDeployments();
+      })
+      .catch(() => showNotification('Failed to restore deployment', 'error'));
+  };
+
+  // View logs helper
+  const viewLogs = (id) => {
+    setActiveLogId(id);
+    setLogContent('Loading logs...');
+    fetch(`${API_BASE}/deployments/${id}/log`)
+      .then(res => res.json())
+      .then(data => setLogContent(data.log || 'No log details available.'))
+      .catch(() => setLogContent('Failed to fetch logs.'));
+  };
+
+  // Keep logs modal refreshed
+  useEffect(() => {
+    if (!activeLogId) return;
+    const logInterval = setInterval(() => {
+      fetch(`${API_BASE}/deployments/${activeLogId}/log`)
+        .then(res => res.json())
+        .then(data => setLogContent(data.log || 'No log details available.'))
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(logInterval);
+  }, [activeLogId]);
+
+  // Add/Remove extra disks
+  const addExtraDisk = () => {
+    const defaultStorage = storages.length > 0 ? storages[0].name : 'local';
+    const diskCount = formData.extra_disks.length + 1;
+    setFormData(prev => ({
+      ...prev,
+      extra_disks: [...prev.extra_disks, { storage: defaultStorage, size: 10, mount_point: `/mnt/data${diskCount}` }]
+    }));
+  };
+
+  const removeExtraDisk = (idx) => {
+    setFormData(prev => ({
+      ...prev,
+      extra_disks: prev.extra_disks.filter((_, i) => i !== idx)
+    }));
+  };
+
+  const updateExtraDisk = (idx, field, val) => {
+    setFormData(prev => {
+      const updated = [...prev.extra_disks];
+      updated[idx] = { ...updated[idx], [field]: val };
+      return { ...prev, extra_disks: updated };
+    });
+  };
+
+  const formatBytes = (bytes) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const filteredDeployments = deployments
+    .filter(d => showArchived ? d.archived : !d.archived)
+    .filter(d => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        (d.hostname || '').toLowerCase().includes(term) ||
+        (d.vm_id || '').toString().includes(term) ||
+        (d.template || '').toLowerCase().includes(term) ||
+        (d.status || '').toLowerCase().includes(term)
+      );
+    });
+
+  const itemsPerPage = 5;
+  const totalPages = Math.ceil(filteredDeployments.length / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedDeployments = filteredDeployments.slice(startIndex, startIndex + itemsPerPage);
+
+  return (
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+      
+      {/* Header Panel */}
+      <header className="glass-panel" style={{ padding: '2rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Icons.Gantry size={36} />
+          <div>
+            <h1 style={{ fontSize: '2.5rem', background: 'linear-gradient(135deg, #fff 0%, #a5b4fc 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.1rem', lineHeight: '1.1' }}>Gantry</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Internal Proxmox LXC Dynamic Terraform Deployer & Monitor</p>
+          </div>
+        </div>
+        
+        {/* Navigation Tabs */}
+        <nav style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className={`btn ${activeTab === 'deploy' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('deploy')}>
+            <Icons.Plus /> Deploy LXC
+          </button>
+          <button className={`btn ${activeTab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('dashboard')}>
+            <Icons.Activity /> Dashboard
+          </button>
+          <button className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('settings')}>
+            <Icons.Settings /> Settings
+          </button>
+        </nav>
+      </header>
+
+      {/* Notification Toast */}
+      {notification && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999,
+          padding: '1rem 1.5rem',
+          borderRadius: 'var(--radius-md)',
+          background: notification.type === 'error' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(16, 185, 129, 0.9)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+          color: '#ffffff',
+          fontWeight: 500,
+          transition: 'all 0.3s ease'
+        }}>
+          {notification.message}
+        </div>
+      )}
+
+      {/* Main Sections */}
+      <main>
+        
+        {/* Tab 1: Deploy Form */}
+        {activeTab === 'deploy' && (
+          <form className="glass-panel" style={{ padding: '2.5rem' }} onSubmit={handleDeploy}>
+            <h2 style={{ fontSize: '1.75rem', marginBottom: '1.5rem', color: '#fff', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Create LXC Instance</h2>
+            
+            {/* Proxmox Host Missing Banner */}
+            {!config.pm_api_url && (
+              <div className="glass-card" style={{ display: 'flex', gap: '1rem', alignItems: 'center', borderColor: 'var(--accent-warning)', background: 'rgba(245, 158, 11, 0.08)', marginBottom: '2rem' }}>
+                <div style={{ color: 'var(--accent-warning)' }}><Icons.Info /></div>
+                <div>
+                  <h4 style={{ color: 'var(--accent-warning)' }}>Proxmox Credentials Missing</h4>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Configure Proxmox server integration in the <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => setActiveTab('settings')}>Settings Tab</strong> first to fetch templates & storages dynamically.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Row 1: General Details */}
+            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem' }}>General Settings</h3>
+            <div className="form-row" style={{ marginBottom: '1.5rem' }}>
+              <div className="form-group">
+                <label className="form-label">VM/CT ID</label>
+                <input type="number" required className="form-control" value={formData.vm_id} onChange={(e) => setFormData({ ...formData, vm_id: parseInt(e.target.value) })} min="100" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Hostname</label>
+                <input type="text" required placeholder="e.g. debian-web-server" className="form-control" value={formData.hostname} onChange={(e) => setFormData({ ...formData, hostname: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Root Password</label>
+                <input type="password" required placeholder="••••••••" className="form-control" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
+              </div>
+            </div>
+
+            {/* Templates Selector */}
+            <div className="form-group" style={{ marginBottom: '2rem' }}>
+              <label className="form-label">Container Template (VZTmpl)</label>
+              {isTemplatesLoading ? (
+                <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching templates from Proxmox...</div>
+              ) : (
+                <select className="form-control" value={formData.template_file_id} onChange={(e) => setFormData({ ...formData, template_file_id: e.target.value })} required>
+                  <option value="" disabled>-- Select Template --</option>
+                  {templates.map(tmpl => (
+                    <option key={tmpl.volid} value={tmpl.volid}>
+                      {tmpl.volid.split('/').pop()} ({formatBytes(tmpl.size)})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Row 2: Hardware Settings */}
+            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem' }}>System Resources</h3>
+            <div className="form-row" style={{ marginBottom: '1.5rem' }}>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Cpu /> CPU Cores</label>
+                <input type="number" required className="form-control" value={formData.cpu_cores} onChange={(e) => setFormData({ ...formData, cpu_cores: parseInt(e.target.value) })} min="1" max="64" />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Ram /> RAM (MB)</label>
+                <input type="number" required className="form-control" value={formData.memory} onChange={(e) => setFormData({ ...formData, memory: parseInt(e.target.value) })} min="256" step="128" />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Ram /> SWAP (MB)</label>
+                <input type="number" required className="form-control" value={formData.swap} onChange={(e) => setFormData({ ...formData, swap: parseInt(e.target.value) })} min="0" step="128" />
+              </div>
+            </div>
+
+            {/* Row 3: Disk Storages */}
+            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Disk Storages</span>
+              <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={addExtraDisk}>
+                <Icons.Plus /> Add Extra Disk
+              </button>
+            </h3>
+            
+            <div className="form-row" style={{ marginBottom: '1rem' }}>
+              <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <label className="form-label">Root Disk Target Storage</label>
+                {isStoragesLoading ? (
+                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Loading storage datastores...</div>
+                ) : (
+                  <select className="form-control" value={formData.disk_storage} onChange={(e) => setFormData({ ...formData, disk_storage: e.target.value })} required>
+                    <option value="" disabled>-- Select Storage --</option>
+                    {storages.map(st => (
+                      <option key={st.name} value={st.name}>{st.name} ({st.type})</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Root Disk Size (GB)</label>
+                <input type="number" required className="form-control" value={formData.disk_size} onChange={(e) => setFormData({ ...formData, disk_size: parseInt(e.target.value) })} min="1" />
+              </div>
+            </div>
+
+            {/* Extra Disks dynamic fields */}
+            {formData.extra_disks.map((disk, idx) => (
+              <div className="form-row glass-card" key={idx} style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.015)' }}>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Extra Disk #{idx + 1} Storage</label>
+                  <select className="form-control" value={disk.storage} onChange={(e) => updateExtraDisk(idx, 'storage', e.target.value)} required>
+                    {storages.map(st => (
+                      <option key={st.name} value={st.name}>{st.name} ({st.type})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Mount Point</label>
+                  <input type="text" className="form-control" placeholder="e.g. /mnt/data" value={disk.mount_point || ''} onChange={(e) => updateExtraDisk(idx, 'mount_point', e.target.value)} required />
+                </div>
+                <div className="form-group" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="form-label">Size (GB)</label>
+                    <input type="number" className="form-control" value={disk.size} onChange={(e) => updateExtraDisk(idx, 'size', parseInt(e.target.value))} min="1" required />
+                  </div>
+                  <button type="button" className="btn btn-danger" style={{ height: '42px', padding: '0 0.8rem' }} onClick={() => removeExtraDisk(idx)}>
+                    <Icons.Trash />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {/* Row 4: Networking */}
+            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem', marginTop: '1.5rem' }}>Networking</h3>
+            <div className="form-row" style={{ marginBottom: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Network Bridge</label>
+                {isBridgesLoading ? (
+                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Loading network bridges...</div>
+                ) : (
+                  <select className="form-control" value={formData.network.bridge} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, bridge: e.target.value } })} required>
+                    <option value="" disabled>-- Select Bridge --</option>
+                    {bridges.map(br => (
+                      <option key={br.name} value={br.name}>{br.name} {br.comment ? `(${br.comment})` : ''}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Network Configuration Type</label>
+                <select className="form-control" value={formData.network.type} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, type: e.target.value } })} required>
+                  <option value="dhcp">DHCP (Automatic)</option>
+                  <option value="static">Static IP Configuration</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">VLAN Tag (Optional)</label>
+                <input type="number" className="form-control" value={formData.network.vlan} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, vlan: e.target.value } })} placeholder="e.g. 10" min="1" max="4094" />
+              </div>
+            </div>
+
+            {formData.network.type === 'static' && (
+              <div className="form-row glass-card" style={{ marginBottom: '2rem', padding: '1.5rem', background: 'rgba(255,255,255,0.01)' }}>
+                <div className="form-group">
+                  <label className="form-label">IPv4 Address (CIDR)</label>
+                  <input type="text" className="form-control" required placeholder="e.g. 192.168.1.50/24" value={formData.network.ip} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, ip: e.target.value } })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Gateway</label>
+                  <input type="text" className="form-control" required placeholder="e.g. 192.168.1.1" value={formData.network.gateway} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, gateway: e.target.value } })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">DNS Server (Optional)</label>
+                  <input type="text" className="form-control" placeholder="e.g. 1.1.1.1" value={formData.network.dns_server} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, dns_server: e.target.value } })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">DNS Search Domain (Optional)</label>
+                  <input type="text" className="form-control" placeholder="e.g. local.lan" value={formData.network.dns_domain} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, dns_domain: e.target.value } })} />
+                </div>
+              </div>
+            )}
+
+            {/* Provisioning & Scripts */}
+            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem', marginTop: '1.5rem' }}>Provisioning & Apps</h3>
+            <div className="glass-card" style={{ padding: '2rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.01)' }}>
+              <label className="form-label" style={{ marginBottom: '1.25rem' }}>Preconfigured Applications to Install</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+                {[
+                  { id: 'docker', name: 'Docker', desc: 'Standard container engine daemon', icon: <Icons.HardDrive /> },
+                  { id: 'docker-compose', name: 'Docker Compose', desc: 'Define & run multi-container applications', icon: <Icons.Network /> },
+                  { id: 'podman', name: 'Podman', desc: 'Secure, daemonless Docker alternative', icon: <Icons.Cpu /> },
+                  { id: 'podman-compose', name: 'Podman Compose', desc: 'Run multi-container setups using Podman', icon: <Icons.Network /> },
+                  { id: 'tailscale', name: 'Tailscale', desc: 'Zero-config secure mesh VPN network', icon: <Icons.Activity /> },
+                  { id: 'nginx', name: 'Nginx', desc: 'High-performance reverse proxy & web server', icon: <Icons.Settings /> }
+                ].map(app => {
+                  const isSelected = formData.predefined_apps.includes(app.id);
+                  return (
+                    <div
+                      key={app.id}
+                      onClick={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          predefined_apps: isSelected
+                            ? prev.predefined_apps.filter(id => id !== app.id)
+                            : [...prev.predefined_apps, app.id]
+                        }));
+                      }}
+                      style={{
+                        background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.01)',
+                        border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '1.25rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isSelected ? '0 0 15px rgba(99, 102, 241, 0.15)' : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                        alignItems: 'flex-start'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
+                        <span style={{ color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)', display: 'inline-flex' }}>
+                          {app.icon}
+                        </span>
+                        <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.95rem' }}>{app.name}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          style={{
+                            marginLeft: 'auto',
+                            width: '15px',
+                            height: '15px',
+                            cursor: 'pointer',
+                            accentColor: 'var(--accent-primary)'
+                          }}
+                        />
+                      </div>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.3' }}>
+                        {app.desc}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem' }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', textTransform: 'none', margin: 0, color: '#fff' }}>
+                  <input type="checkbox" checked={enableCustomScript} onChange={(e) => {
+                    setEnableCustomScript(e.target.checked);
+                    if (!e.target.checked) setFormData(prev => ({ ...prev, custom_script: '' }));
+                  }} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                  Enable Custom Provisioning Script
+                </label>
+              </div>
+            </div>
+
+            {enableCustomScript && (
+              <div className="form-group" style={{ marginBottom: '2rem' }}>
+                <label className="form-label">Custom Provisioning Bash Script</label>
+                <textarea rows="5" className="form-control" placeholder="# Write your custom script here&#10;apt-get update &amp;&amp; apt-get install -y git neofetch" value={formData.custom_script} onChange={(e) => setFormData({ ...formData, custom_script: e.target.value })} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.85rem' }}></textarea>
+              </div>
+            )}
+
+            {/* SSH Public Keys */}
+            <div className="form-group" style={{ marginBottom: '2rem' }}>
+              <label className="form-label">SSH Public Keys (One per line, optional)</label>
+              <textarea rows="3" className="form-control" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC..." value={formData.ssh_keys} onChange={(e) => setFormData({ ...formData, ssh_keys: e.target.value })} style={{ resize: 'vertical' }}></textarea>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button type="submit" disabled={isDeploying || templates.length === 0} className="btn btn-primary" style={{ padding: '0.85rem 2.5rem' }}>
+                {isDeploying ? 'Starting Pipeline...' : 'Deploy Container'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Tab 2: Dashboard / Reporting */}
+        {activeTab === 'dashboard' && (
+          <div>
+            {/* Deployments Stats Grid */}
+            <div className="form-row" style={{ gap: '1.5rem', marginBottom: '2rem' }}>
+              <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase' }}>Active Created</p>
+                  <h3 style={{ fontSize: '2rem', marginTop: '0.25rem' }}>{deployments.filter(d => !d.archived).length}</h3>
+                </div>
+                <div style={{ color: 'var(--accent-primary)', opacity: 0.8 }}><Icons.Activity /></div>
+              </div>
+              <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase' }}>Active/Running</p>
+                  <h3 style={{ fontSize: '2rem', marginTop: '0.25rem', color: 'var(--accent-success)' }}>
+                    {deployments.filter(d => !d.archived && (d.status === 'active' || (d.proxmox_status && d.proxmox_status.status === 'running'))).length}
+                  </h3>
+                </div>
+                <div style={{ color: 'var(--accent-success)', opacity: 0.8 }}><Icons.Activity /></div>
+              </div>
+              <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase' }}>Failed Jobs (Active)</p>
+                  <h3 style={{ fontSize: '2rem', marginTop: '0.25rem', color: 'var(--accent-error)' }}>
+                    {deployments.filter(d => !d.archived && d.status === 'failed').length}
+                  </h3>
+                </div>
+                <div style={{ color: 'var(--accent-error)', opacity: 0.8 }}><Icons.Info /></div>
+              </div>
+            </div>
+
+            {/* Deployments Table */}
+            <div className="glass-panel" style={{ padding: '2rem', overflowX: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.5rem', color: '#fff', margin: 0 }}>
+                  {showArchived ? 'Archived Container Deployments' : 'Active Container Deployments'}
+                </h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Search hostname, VM ID, template..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="form-control"
+                    style={{ width: '220px', padding: '0.4rem 0.8rem', fontSize: '0.85rem', height: '36px' }}
+                  />
+                  <label className="form-label" style={{ margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', textTransform: 'none', fontSize: '0.9rem', color: '#fff' }}>
+                    <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                    Show Archived
+                  </label>
+                </div>
+              </div>
+              
+              {filteredDeployments.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                  <Icons.Info />
+                  <p style={{ marginTop: '0.5rem' }}>{searchTerm ? 'No deployments match your search term.' : (showArchived ? 'No archived instances found.' : 'No active container instances found. Start by deploying a new LXC container.')}</p>
+                </div>
+              ) : (
+                <>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase' }}>
+                        <th style={{ padding: '1rem 0.75rem' }}>ID & Name</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Template</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Resources</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Status</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Usage (Live)</th>
+                        <th style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedDeployments
+                        .map((dep) => {
+                          const isRunning = dep.proxmox_status?.status === 'running';
+                        return (
+                          <tr key={dep.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }} className="table-row-hover">
+                            
+                            {/* ID & Name */}
+                            <td style={{ padding: '1.25rem 0.75rem' }}>
+                              <div style={{ fontWeight: 600, color: '#fff' }}>{dep.hostname}</div>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>CT ID: {dep.vm_id}</div>
+                            </td>
+
+                            {/* Template */}
+                            <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                              {dep.template.split('/').pop()}
+                            </td>
+
+                            {/* Resources */}
+                            <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.85rem' }}>
+                              <div>{dep.cpu_cores} vCPU</div>
+                              <div style={{ color: 'var(--text-secondary)' }}>{dep.memory} MB RAM</div>
+                            </td>
+
+                            {/* Deployment Status */}
+                            <td style={{ padding: '1.25rem 0.75rem' }}>
+                              <span style={{
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                textTransform: 'uppercase',
+                                background: dep.status === 'active' ? 'rgba(16, 185, 129, 0.15)' :
+                                            dep.status === 'deploying' ? 'rgba(99, 102, 241, 0.15)' :
+                                            dep.status === 'destroying' ? 'rgba(245, 158, 11, 0.15)' :
+                                            'rgba(239, 68, 68, 0.15)',
+                                color: dep.status === 'active' ? 'var(--accent-success)' :
+                                       dep.status === 'deploying' ? 'var(--accent-primary)' :
+                                       dep.status === 'destroying' ? 'var(--accent-warning)' :
+                                       'var(--accent-error)'
+                              }}>
+                                {dep.status}
+                              </span>
+                              {dep.proxmox_status?.status && (
+                                <div style={{ fontSize: '0.75rem', color: isRunning ? 'var(--accent-success)' : 'var(--text-muted)', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isRunning ? 'var(--accent-success)' : 'var(--text-muted)', display: 'inline-block' }}></span>
+                                  {dep.proxmox_status.status}
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Real-time resource usage from Proxmox */}
+                            <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.8rem', width: '180px' }}>
+                              {isRunning ? (
+                                <div>
+                                  <div style={{ marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>CPU:</span>
+                                    <strong style={{ color: '#fff' }}>{(dep.proxmox_status.cpu * 100).toFixed(1)}%</strong>
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>RAM:</span>
+                                    <strong style={{ color: '#fff' }}>{Math.round(dep.proxmox_status.mem / (1024 * 1024))} MB</strong>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              )}
+                            </td>
+
+                            {/* Actions */}
+                            <td style={{ padding: '1.25rem 0.75rem', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                                <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => viewLogs(dep.id)}>
+                                  <Icons.ExternalLink /> logs
+                                </button>
+                                {dep.status !== 'destroyed' && dep.status !== 'destroying' && (
+                                  <button className="btn btn-danger" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleDestroy(dep.id)}>
+                                    <Icons.Trash />
+                                  </button>
+                                )}
+                                {dep.archived ? (
+                                  <button className="btn btn-secondary" title="Restore from archive" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleUnarchive(dep.id)}>
+                                    <Icons.FolderOpen /> Restore
+                                  </button>
+                                ) : (
+                                  (dep.status === 'failed' || dep.status === 'destroyed') && (
+                                    <button className="btn btn-secondary" title="Archive" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleArchive(dep.id)}>
+                                      <Icons.Archive /> Archive
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </td>
+
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Pagination Controls */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Showing {filteredDeployments.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredDeployments.length)} of {filteredDeployments.length} deployments
+                    </span>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', height: '36px' }}
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      >
+                        Previous
+                      </button>
+                      <span style={{ fontSize: '0.9rem', color: '#fff', padding: '0 0.75rem' }}>
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', height: '36px' }}
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Dynamic log viewer overlay */}
+            {activeLogId && (
+              <div style={{
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.85)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 99999,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2rem'
+              }}>
+                <div className="glass-panel" style={{ width: '100%', maxWidth: '900px', height: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ color: '#fff' }}>Terraform Console Pipeline Logs</h3>
+                    <button className="btn btn-secondary" style={{ padding: '0.4rem 1rem' }} onClick={() => setActiveLogId(null)}>Close</button>
+                  </div>
+                  <pre style={{
+                    flex: 1,
+                    background: '#04060b',
+                    padding: '1.5rem',
+                    color: '#86efac',
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: '1.4'
+                  }}>
+                    {logContent}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Settings Page */}
+        {activeTab === 'settings' && (
+          <div className="glass-panel" style={{ padding: '2.5rem' }}>
+            <h2 style={{ fontSize: '1.75rem', marginBottom: '1.5rem', color: '#fff', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Configuration Settings</h2>
+            
+            <form onSubmit={handleSaveConfig}>
+               <div className="form-group">
+                <label className="form-label">Proxmox API Gateway Hostname or IP Address URL</label>
+                <input type="text" required placeholder="https://192.168.1.100:8006/api2/json" className="form-control" value={config.pm_api_url} onChange={(e) => setConfig({ ...config, pm_api_url: e.target.value })} />
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>Ensure the URL points to your Proxmox API node endpoint. Default port is 8006.</span>
+              </div>
+
+              <div className="form-row" style={{ marginBottom: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Proxmox API Token ID</label>
+                  <input type="text" placeholder="e.g. root@pam!terraform" className="form-control" value={config.pm_api_token_id} onChange={(e) => setConfig({ ...config, pm_api_token_id: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Proxmox API Token Secret</label>
+                  <input type="password" placeholder="••••••••••••" className="form-control" value={config.pm_api_token_secret} onChange={(e) => setConfig({ ...config, pm_api_token_secret: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="form-row" style={{ marginBottom: '2rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Target Proxmox Node Name</label>
+                  <input type="text" required placeholder="e.g. pve" className="form-control" value={config.node_name} onChange={(e) => setConfig({ ...config, node_name: e.target.value })} />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>The actual name of the Proxmox host (e.g. pve), NOT the IP address.</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">CT Template Storage Pool Name</label>
+                  <input type="text" required placeholder="e.g. local" className="form-control" value={config.template_storage} onChange={(e) => setConfig({ ...config, template_storage: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Network Bridge</label>
+                  <input type="text" required placeholder="e.g. vmbr0" className="form-control" value={config.default_bridge} onChange={(e) => setConfig({ ...config, default_bridge: e.target.value })} />
+                </div>
+              </div>
+
+              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+
+              {/* Section 2: Resource Exclusions */}
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Resource Exclusions</h3>
+              <div className="form-row" style={{ marginBottom: '2rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Excluded Storage Pools</label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'block' }}>Select storage pools to hide them from the Deploy storage dropdowns.</span>
+                  
+                  {isAllResourcesLoading ? (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Scanning Proxmox storage pools...</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.5rem' }}>
+                      {allStorages.map(st => {
+                        const isExcluded = (config.excluded_storages || '')
+                          .split(',')
+                          .map(s => s.trim().toLowerCase())
+                          .includes(st.name.toLowerCase());
+                        return (
+                          <button
+                            key={st.name}
+                            type="button"
+                            onClick={() => {
+                              const currentList = (config.excluded_storages || '')
+                                .split(',')
+                                .map(s => s.trim())
+                                .filter(Boolean);
+                              let newList;
+                              if (isExcluded) {
+                                newList = currentList.filter(s => s.toLowerCase() !== st.name.toLowerCase());
+                              } else {
+                                newList = [...currentList, st.name];
+                              }
+                              setConfig({ ...config, excluded_storages: newList.join(',') });
+                            }}
+                            style={{
+                              background: isExcluded ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                              border: isExcluded ? '1px solid var(--accent-error)' : '1px solid rgba(16, 185, 129, 0.4)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.4rem 0.8rem',
+                              color: '#fff',
+                              fontSize: '0.85rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.4rem',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <span style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: isExcluded ? 'var(--accent-error)' : 'var(--accent-success)'
+                            }}></span>
+                            {st.name} <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>({st.type})</span>
+                          </button>
+                        );
+                      })}
+                      {allStorages.length === 0 && (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No storages found. Configure and test your Proxmox credentials first.</span>
+                      )}
+                    </div>
+                  )}
+                  <input type="hidden" name="excluded_storages" value={config.excluded_storages || ''} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Excluded Network Bridges</label>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'block' }}>Select network bridges to hide them from the Deploy bridge dropdowns.</span>
+                  
+                  {isAllResourcesLoading ? (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Scanning network interfaces...</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.5rem' }}>
+                      {allBridges.map(br => {
+                        const isExcluded = (config.excluded_bridges || '')
+                          .split(',')
+                          .map(b => b.trim().toLowerCase())
+                          .includes(br.name.toLowerCase());
+                        return (
+                          <button
+                            key={br.name}
+                            type="button"
+                            onClick={() => {
+                              const currentList = (config.excluded_bridges || '')
+                                .split(',')
+                                .map(b => b.trim())
+                                .filter(Boolean);
+                              let newList;
+                              if (isExcluded) {
+                                newList = currentList.filter(b => b.toLowerCase() !== br.name.toLowerCase());
+                              } else {
+                                newList = [...currentList, br.name];
+                              }
+                              setConfig({ ...config, excluded_bridges: newList.join(',') });
+                            }}
+                            style={{
+                              background: isExcluded ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                              border: isExcluded ? '1px solid var(--accent-error)' : '1px solid rgba(16, 185, 129, 0.4)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.4rem 0.8rem',
+                              color: '#fff',
+                              fontSize: '0.85rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.4rem',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <span style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: isExcluded ? 'var(--accent-error)' : 'var(--accent-success)'
+                            }}></span>
+                            {br.name} {br.comment ? <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>({br.comment})</span> : ''}
+                          </button>
+                        );
+                      })}
+                      {allBridges.length === 0 && (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No network bridges found. Configure and test your Proxmox credentials first.</span>
+                      )}
+                    </div>
+                  )}
+                  <input type="hidden" name="excluded_bridges" value={config.excluded_bridges || ''} />
+                </div>
+              </div>
+
+              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+
+              {/* Section 3: Default Resource Sizing */}
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Default Deployment Resources</h3>
+              <div className="form-row" style={{ marginBottom: '2rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Default CPU Cores</label>
+                  <input type="number" className="form-control" min="1" max="64" value={config.default_cpu_cores !== undefined ? config.default_cpu_cores : 1} onChange={(e) => setConfig({ ...config, default_cpu_cores: parseInt(e.target.value) || 1 })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default RAM (MB)</label>
+                  <input type="number" className="form-control" min="256" step="128" value={config.default_memory !== undefined ? config.default_memory : 1024} onChange={(e) => setConfig({ ...config, default_memory: parseInt(e.target.value) || 1024 })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Swap (MB)</label>
+                  <input type="number" className="form-control" min="0" step="128" value={config.default_swap !== undefined ? config.default_swap : 512} onChange={(e) => setConfig({ ...config, default_swap: parseInt(e.target.value) || 512 })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Disk Size (GB)</label>
+                  <input type="number" className="form-control" min="1" value={config.default_disk_size !== undefined ? config.default_disk_size : 8} onChange={(e) => setConfig({ ...config, default_disk_size: parseInt(e.target.value) || 8 })} />
+                </div>
+              </div>
+
+              <div className="form-row" style={{ marginBottom: '2rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Default DNS Server</label>
+                  <input type="text" placeholder="e.g. 1.1.1.1" className="form-control" value={config.default_dns_server || ''} onChange={(e) => setConfig({ ...config, default_dns_server: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Search Domain</label>
+                  <input type="text" placeholder="e.g. local.lan" className="form-control" value={config.default_dns_domain || ''} onChange={(e) => setConfig({ ...config, default_dns_domain: e.target.value })} />
+                </div>
+              </div>
+
+              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+
+              {/* Section 4: Default SSH Keys */}
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Default SSH Public Keys</h3>
+              <div className="form-group" style={{ marginBottom: '2.5rem' }}>
+                <label className="form-label">SSH Public Keys (One per line)</label>
+                <textarea rows="4" className="form-control" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC..." value={config.default_ssh_keys || ''} onChange={(e) => setConfig({ ...config, default_ssh_keys: e.target.value })} style={{ resize: 'vertical' }}></textarea>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between', marginTop: '2rem' }}>
+                <button type="button" className="btn btn-danger" onClick={handleClearConfig} style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.25) 100%)', border: '1px solid var(--accent-error)', boxShadow: 'none' }}>
+                  Clear All Settings
+                </button>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button type="button" disabled={isTestingConfig} className="btn btn-secondary" onClick={handleTestConfig}>
+                    {isTestingConfig ? 'Testing...' : 'Test Connection'}
+                  </button>
+                  <button type="submit" className="btn btn-primary">
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
+
+export default App;
