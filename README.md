@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/src/assets/hero.png" alt="Gantry Banner" width="600" />
+  <img src="frontend/public/favicon.svg" alt="Gantry Logo" width="120" />
 </p>
 
 # Gantry
