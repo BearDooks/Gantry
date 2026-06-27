@@ -146,8 +146,10 @@ function proxmoxRequest(method, pathUrl, data = null, customConfig = null) {
     headers: {
       'Authorization': tokenHeader,
       'Accept': 'application/json',
-      'Content-Type': contentType,
-      ...(requestBody ? { 'Content-Length': Buffer.byteLength(requestBody) } : {})
+      ...(requestBody ? { 
+        'Content-Type': contentType, 
+        'Content-Length': Buffer.byteLength(requestBody) 
+      } : ((method === 'POST' || method === 'PUT' || method === 'DELETE') ? { 'Content-Length': 0 } : {}))
     },
     rejectUnauthorized: false // Often Proxmox uses self-signed certs
   };
@@ -163,7 +165,10 @@ function proxmoxRequest(method, pathUrl, data = null, customConfig = null) {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve(parsed.data || parsed);
           } else {
-            reject(new Error(parsed.errors || parsed.message || `HTTP ${res.statusCode}`));
+            const errDetail = parsed.errors 
+              ? (typeof parsed.errors === 'object' ? JSON.stringify(parsed.errors) : parsed.errors)
+              : (parsed.message || `HTTP ${res.statusCode}`);
+            reject(new Error(errDetail));
           }
         } catch (e) {
           reject(new Error(`Failed to parse response: ${body.substring(0, 100)}`));
@@ -784,7 +789,8 @@ app.post('/api/proxmox/lxc/:node/:vmid/status/:action', async (req, res) => {
     await proxmoxRequest('POST', `/nodes/${node}/lxc/${vmid}/status/${action}`);
     res.json({ success: true, message: `Container ${vmid} status change to '${action}' submitted.` });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error(`Error performing power action ${action} on VM ${vmid}:`, err);
+    res.status(500).json({ success: false, error: err.message || JSON.stringify(err) });
   }
 });
 
@@ -862,11 +868,12 @@ app.post('/api/proxmox/lxc/:node/:vmid/snapshots', async (req, res) => {
   try {
     const upid = await proxmoxRequest('POST', `/nodes/${node}/lxc/${vmid}/snapshot`, {
       snapname,
-      comment: description || ''
+      description: description || ''
     });
     res.json({ success: true, message: `Snapshot '${snapname}' creation started.`, upid });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error creating snapshot:', err);
+    res.status(500).json({ success: false, error: err.message || JSON.stringify(err) });
   }
 });
 
@@ -877,7 +884,8 @@ app.post('/api/proxmox/lxc/:node/:vmid/snapshots/:snapname/rollback', async (req
     const upid = await proxmoxRequest('POST', `/nodes/${node}/lxc/${vmid}/snapshot/${snapname}/rollback`);
     res.json({ success: true, message: `Rollback to snapshot '${snapname}' started.`, upid });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error rolling back snapshot:', err);
+    res.status(500).json({ success: false, error: err.message || JSON.stringify(err) });
   }
 });
 
@@ -888,7 +896,8 @@ app.delete('/api/proxmox/lxc/:node/:vmid/snapshots/:snapname', async (req, res) 
     const upid = await proxmoxRequest('DELETE', `/nodes/${node}/lxc/${vmid}/snapshot/${snapname}`);
     res.json({ success: true, message: `Snapshot '${snapname}' deletion started.`, upid });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error deleting snapshot:', err);
+    res.status(500).json({ success: false, error: err.message || JSON.stringify(err) });
   }
 });
 

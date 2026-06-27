@@ -184,6 +184,26 @@ function App() {
   const [activeTab, setActiveTab] = useState('deploy');
   const [wizardStep, setWizardStep] = useState(1);
   const [settingsSubTab, setSettingsSubTab] = useState('credentials');
+  
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: null
+  });
+
+  const triggerConfirm = (title, message, onConfirm) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: null });
+      }
+    });
+  };
+
   const [config, setConfig] = useState({
     pm_api_url: '',
     pm_api_token_id: '',
@@ -434,20 +454,23 @@ function App() {
 
   // Handle settings wipe/clear
   const handleClearConfig = () => {
-    if (!window.confirm('Are you sure you want to clear all settings? This will reset your Proxmox API integration and all default parameters.')) {
-      return;
-    }
-    fetch(`${API_BASE}/config/clear`, { method: 'POST' })
-      .then(res => res.json())
-      .then(data => {
-        showNotification(data.message);
-        setConfig(data.config);
-        setTemplates([]);
-        setStorages([]);
-        setBridges([]);
-        setAllStorages([]);
-      })
-      .catch(() => showNotification('Failed to clear settings', 'error'));
+    triggerConfirm(
+      'Reset All Settings',
+      'Are you sure you want to clear all settings? This will reset your Proxmox API integration and all default parameters.',
+      () => {
+        fetch(`${API_BASE}/config/clear`, { method: 'POST' })
+          .then(res => res.json())
+          .then(data => {
+            showNotification(data.message);
+            setConfig(data.config);
+            setTemplates([]);
+            setStorages([]);
+            setBridges([]);
+            setAllStorages([]);
+          })
+          .catch(() => showNotification('Failed to clear settings', 'error'));
+      }
+    );
   };
 
   // Handle settings power actions (start/stop/reboot)
@@ -513,40 +536,46 @@ function App() {
 
   // Rollback Snapshot
   const handleRollbackSnapshot = (snapname) => {
-    if (!window.confirm(`Are you sure you want to rollback to snapshot '${snapname}'? This will revert the container state.`)) {
-      return;
-    }
-    const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
-    fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots/${snapname}/rollback`, { method: 'POST' })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          showNotification(data.message);
-          loadSnapshots(selectedSnapshotDep);
-        } else {
-          showNotification(data.error || 'Failed to rollback', 'error');
-        }
-      })
-      .catch(() => showNotification('Error rolling back snapshot', 'error'));
+    triggerConfirm(
+      'Rollback Snapshot',
+      `Are you sure you want to rollback to snapshot '${snapname}'? This will revert the container state.`,
+      () => {
+        const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
+        fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots/${snapname}/rollback`, { method: 'POST' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              showNotification(data.message);
+              loadSnapshots(selectedSnapshotDep);
+            } else {
+              showNotification(data.error || 'Failed to rollback', 'error');
+            }
+          })
+          .catch(() => showNotification('Error rolling back snapshot', 'error'));
+      }
+    );
   };
 
   // Delete Snapshot
   const handleDeleteSnapshot = (snapname) => {
-    if (!window.confirm(`Are you sure you want to delete snapshot '${snapname}'?`)) {
-      return;
-    }
-    const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
-    fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots/${snapname}`, { method: 'DELETE' })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          showNotification(data.message);
-          loadSnapshots(selectedSnapshotDep);
-        } else {
-          showNotification(data.error || 'Failed to delete snapshot', 'error');
-        }
-      })
-      .catch(() => showNotification('Error deleting snapshot', 'error'));
+    triggerConfirm(
+      'Delete Snapshot',
+      `Are you sure you want to delete snapshot '${snapname}'?`,
+      () => {
+        const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
+        fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots/${snapname}`, { method: 'DELETE' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              showNotification(data.message);
+              loadSnapshots(selectedSnapshotDep);
+            } else {
+              showNotification(data.error || 'Failed to delete snapshot', 'error');
+            }
+          })
+          .catch(() => showNotification('Error deleting snapshot', 'error'));
+      }
+    );
   };
 
   // Draw lightweight SVG Sparkline
@@ -733,16 +762,19 @@ function App() {
 
   // Destroy deployment
   const handleDestroy = (id) => {
-    if (!window.confirm('Are you absolutely sure you want to destroy this LXC container? All data will be lost.')) {
-      return;
-    }
-    fetch(`${API_BASE}/deployments/${id}/destroy`, { method: 'POST' })
-      .then(res => res.json())
-      .then(data => {
-        showNotification('Tear-down job submitted');
-        loadDeployments();
-      })
-      .catch(() => showNotification('Failed to submit destroy request', 'error'));
+    triggerConfirm(
+      'Destroy Container',
+      'Are you absolutely sure you want to destroy this LXC container? All data will be lost.',
+      () => {
+        fetch(`${API_BASE}/deployments/${id}/destroy`, { method: 'POST' })
+          .then(res => res.json())
+          .then(data => {
+            showNotification('Tear-down job submitted');
+            loadDeployments();
+          })
+          .catch(() => showNotification('Failed to submit destroy request', 'error'));
+      }
+    );
   };
 
   // Archive deployment
@@ -769,24 +801,27 @@ function App() {
 
   // Delete downloaded container template
   const handleDeleteTemplate = (volid) => {
-    if (!window.confirm(`Are you sure you want to permanently delete the template file '${volid.split('/').pop()}' from Proxmox storage?`)) {
-      return;
-    }
-    fetch(`${API_BASE}/proxmox/templates`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ volid })
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          showNotification(data.message);
-          loadProxmoxData(); // Reload templates list
-        } else {
-          showNotification(data.error || 'Failed to delete template', 'error');
-        }
-      })
-      .catch(() => showNotification('Error deleting template', 'error'));
+    triggerConfirm(
+      'Delete Container Template',
+      `Are you sure you want to permanently delete the template file '${volid.split('/').pop()}' from Proxmox storage?`,
+      () => {
+        fetch(`${API_BASE}/proxmox/templates`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volid })
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              showNotification(data.message);
+              loadProxmoxData(); // Reload templates list
+            } else {
+              showNotification(data.error || 'Failed to delete template', 'error');
+            }
+          })
+          .catch(() => showNotification('Error deleting template', 'error'));
+      }
+    );
   };
 
 
@@ -1989,6 +2024,38 @@ function App() {
         )}
 
       </main>
+
+      {/* Custom Confirmation Modal */}
+      {confirmDialog.isOpen && (
+        <div className="fade-in" style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(10px)',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '450px', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', border: '1px solid var(--glass-border)' }}>
+            <h3 style={{ color: '#fff', margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              ⚠️ {confirmDialog.title}
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0, lineHeight: '1.5' }}>
+              {confirmDialog.message}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+              <button className="btn btn-secondary" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }} onClick={() => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: null })}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }} onClick={confirmDialog.onConfirm}>
+                Confirm Action
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
