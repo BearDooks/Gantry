@@ -391,3 +391,140 @@ select.form-control option {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* Gantry Crane Animation */
+.gantry-animation-stage {
+  width: 100%;
+  height: 120px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.gantry-rail {
+  position: absolute;
+  top: 20px;
+  left: 10%;
+  right: 10%;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+}
+
+.gantry-rail::before, .gantry-rail::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  width: 2px;
+  height: 16px;
+  background: rgba(255,255,255,0.15);
+}
+.gantry-rail::before { left: 0; }
+.gantry-rail::after { right: 0; }
+
+.gantry-trolley {
+  position: absolute;
+  top: 16px;
+  left: 20%;
+  width: 30px;
+  height: 12px;
+  background: var(--accent-primary);
+  border-radius: 3px;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+  animation: trolleyMove 6s infinite ease-in-out;
+  z-index: 5;
+}
+
+.gantry-cable {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  width: 2px;
+  height: 35px;
+  background: rgba(255, 255, 255, 0.4);
+  transform-origin: top center;
+  animation: cableExtend 6s infinite ease-in-out;
+}
+
+.gantry-hoisted-box {
+  position: absolute;
+  top: 35px;
+  left: -14px;
+  width: 30px;
+  height: 24px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border: 1px solid var(--accent-primary);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  animation: boxCarry 6s infinite ease-in-out;
+}
+
+.gantry-rack-slot {
+  position: absolute;
+  bottom: 15px;
+  left: 70%;
+  width: 40px;
+  height: 30px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.01);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.gantry-rack-slot::after {
+  content: 'RACK';
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
+.gantry-rack-slot.active-slot {
+  border-color: var(--accent-success);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+  animation: slotPulse 2s infinite ease-in-out;
+}
+
+@keyframes trolleyMove {
+  0% { left: 20%; }
+  40% { left: 71%; }
+  60% { left: 71%; }
+  100% { left: 20%; }
+}
+
+@keyframes cableExtend {
+  0% { height: 25px; }
+  35% { height: 25px; }
+  45% { height: 50px; }
+  55% { height: 50px; }
+  65% { height: 25px; }
+  100% { height: 25px; }
+}
+
+@keyframes boxCarry {
+  0% { top: 25px; opacity: 1; transform: scale(1); }
+  35% { top: 25px; opacity: 1; transform: scale(1); }
+  45% { top: 50px; opacity: 1; transform: scale(1); }
+  52% { opacity: 0.2; transform: scale(0.9); }
+  58% { opacity: 0.2; transform: scale(0.9); }
+  65% { top: 25px; opacity: 0; transform: scale(1); }
+  75% { opacity: 0; }
+  85% { opacity: 1; }
+  100% { top: 25px; opacity: 1; transform: scale(1); }
+}
+
+@keyframes slotPulse {
+  0% { background: rgba(16, 185, 129, 0.02); }
+  50% { background: rgba(16, 185, 129, 0.12); border-color: #34d399; }
+  100% { background: rgba(16, 185, 129, 0.02); }
+}

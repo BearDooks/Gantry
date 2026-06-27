@@ -2674,6 +2674,28 @@ function App() {
               </button>
             </div>
 
+            {/* Gantry Crane Hoist Animation */}
+            {(() => {
+              const name = (selectedPipelineDep.template || '').toLowerCase();
+              let emoji = '🐧';
+              if (name.includes('ubuntu')) emoji = '🦊';
+              else if (name.includes('debian')) emoji = '🌀';
+              else if (name.includes('alpine')) emoji = '🏔️';
+              return (
+                <div className="gantry-animation-stage">
+                  <div className="gantry-rail" />
+                  <div className="gantry-trolley">
+                    <div className="gantry-cable">
+                      <div className="gantry-hoisted-box">
+                        {emoji}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="gantry-rack-slot active-slot" />
+                </div>
+              );
+            })()}
+
             {/* Steps Track */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', position: 'relative', paddingLeft: '1rem' }}>
               {/* Vertical connecting line */}
