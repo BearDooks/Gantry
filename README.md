@@ -10,6 +10,19 @@ The interface is built using a modern, premium **dark-themed glassmorphism** sty
 
 ---
 
+## Key Features & Visual Upgrades
+
+* **Dynamic Glassmorphic Themes**: Custom visualization options in the **Visual Theme** settings sub-tab, including presets: `Deep Space`, `Cybernetic Violet`, and `Obsidian Cyberpunk` with adjustable background blur density (`0px` to `24px`).
+* **Visual OS Template Cards**: Displays beautiful container operating system selection cards dynamically mapping Linux distributions with distinct visual colors and icons.
+* **Double Resource Sizing Gauges**:
+  - **Gantry Footprint Only**: Displays CPU, RAM, and Disk space allocated by Gantry.
+  - **Physical Cluster Load**: Displays total allocated resources across the entire Proxmox cluster environment (including virtual machines/containers created outside of Gantry).
+  - **4:1 CPU Overcommit Bound**: Automatically calculates vCPU headroom based on a `4:1` virtual-to-physical cores ratio (`clusterCPU * 4`) across the cluster nodes.
+* **Live Deployment Pipeline Tracker**: Features an animated modal progress bar that scans and parses active logs to present task milestones in real-time.
+* **Details Side-Drawer**: Quick configuration parameters overlay for each container deployment on row-click.
+
+---
+
 ## Architecture & How It Works
 
 1. **Frontend (Vite + React)**: The user interface where you configure your LXC settings, review deployed containers, view real-time resource stats, and read live build logs.
