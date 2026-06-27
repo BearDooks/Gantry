@@ -182,6 +182,8 @@ const SearchableSelect = ({ options, value, onChange, placeholder, disabled }) =
 function App() {
 
   const [activeTab, setActiveTab] = useState('deploy');
+  const [wizardStep, setWizardStep] = useState(1);
+  const [settingsSubTab, setSettingsSubTab] = useState('credentials');
   const [config, setConfig] = useState({
     pm_api_url: '',
     pm_api_token_id: '',
@@ -548,27 +550,45 @@ function App() {
   };
 
   // Draw lightweight SVG Sparkline
-  const drawSparkline = (points, key, maxVal = 100) => {
+  const drawSparkline = (points, key, maxVal = 100, color = 'var(--accent-primary)') => {
     if (!points || points.length < 2) return null;
-    const width = 80;
-    const height = 16;
+    const width = 85;
+    const height = 18;
     const padding = 1;
     const xStep = (width - padding * 2) / (points.length - 1);
-    const svgPoints = points.map((p, idx) => {
+    
+    const coords = points.map((p, idx) => {
       const x = padding + idx * xStep;
       const val = p[key] || 0;
       const clampedVal = Math.min(val, maxVal);
-      const y = height - padding - (clampedVal / maxVal) * (height - padding * 2);
-      return `${x},${y}`;
-    }).join(' ');
+      const y = height - padding - (clampedVal / (maxVal || 1)) * (height - padding * 2);
+      return { x, y };
+    });
+
+    const linePointsStr = coords.map(c => `${c.x},${c.y}`).join(' ');
+    const areaPointsStr = `${coords[0].x},${height} ${linePointsStr} ${coords[coords.length - 1].x},${height}`;
+    
+    const gradId = `sparkline-grad-${key}-${Math.random().toString(36).substr(2, 4)}`;
 
     return (
-      <svg width={width} height={height} style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: '0.5rem' }}>
+      <svg width={width} height={height} style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: '0.5rem', overflow: 'visible' }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+        <polygon
+          fill={`url(#${gradId})`}
+          points={areaPointsStr}
+        />
         <polyline
           fill="none"
-          stroke="var(--accent-primary)"
-          strokeWidth="1.25"
-          points={svgPoints}
+          stroke={color}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={linePointsStr}
         />
       </svg>
     );
@@ -595,42 +615,95 @@ function App() {
       .finally(() => setIsTestingConfig(false));
   };
 
+  const validateStep = (step) => {
+    if (step === 1) {
+      if (!formData.vm_id || formData.vm_id < 100) {
+        showNotification('VM ID must be 100 or greater.', 'error');
+        return false;
+      }
+      const hostnameRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$/;
+      if (!formData.hostname || !hostnameRegex.test(formData.hostname)) {
+        showNotification('Invalid Hostname. Use alphanumeric characters and hyphens only.', 'error');
+        return false;
+      }
+      if (!formData.password) {
+        showNotification('Root Password is required.', 'error');
+        return false;
+      }
+      if (formData.password.length < 6) {
+        showNotification('Root Password must be at least 6 characters long.', 'error');
+        return false;
+      }
+      if (!formData.target_node) {
+        showNotification('Please select a Target Cluster Node.', 'error');
+        return false;
+      }
+      if (!formData.template_file_id) {
+        showNotification('Please select a Container Template.', 'error');
+        return false;
+      }
+    } else if (step === 2) {
+      if (!formData.cpu_cores || formData.cpu_cores < 1) {
+        showNotification('CPU Cores must be 1 or more.', 'error');
+        return false;
+      }
+      if (!formData.memory || formData.memory < 256) {
+        showNotification('RAM must be 256 MB or more.', 'error');
+        return false;
+      }
+      if (formData.swap === undefined || formData.swap < 0) {
+        showNotification('Swap memory cannot be negative.', 'error');
+        return false;
+      }
+      if (!formData.disk_storage) {
+        showNotification('Please select a Root Disk Target Storage.', 'error');
+        return false;
+      }
+      if (!formData.disk_size || formData.disk_size < 1) {
+        showNotification('Root Disk Size must be 1 GB or more.', 'error');
+        return false;
+      }
+    } else if (step === 3) {
+      if (!formData.network.bridge) {
+        showNotification('Please select a Network Bridge.', 'error');
+        return false;
+      }
+      if (formData.network.type === 'static') {
+        const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        const cidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:3[0-2]|[1-2]?[0-9])$/;
+        
+        if (!cidrRegex.test(formData.network.ip)) {
+          showNotification('Invalid IPv4 CIDR address. Format must be IP/Mask (e.g., 192.168.1.50/24).', 'error');
+          return false;
+        }
+        
+        if (formData.network.gateway && !ipRegex.test(formData.network.gateway)) {
+          showNotification('Invalid Gateway IP address.', 'error');
+          return false;
+        }
+        
+        if (formData.network.dns_server && !ipRegex.test(formData.network.dns_server)) {
+          showNotification('Invalid DNS Server IP address.', 'error');
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
   // Deploy submit
   const handleDeploy = (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
 
-    // 1. Hostname validation (RFC 1123 DNS hostname rules)
-    const hostnameRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$/;
-    if (!hostnameRegex.test(formData.hostname)) {
-      showNotification('Invalid Hostname. Use alphanumeric characters and hyphens only.', 'error');
+    if (wizardStep < 4) {
+      if (validateStep(wizardStep)) {
+        setWizardStep(prev => prev + 1);
+      }
       return;
     }
 
-    // 2. VM ID validation
-    if (!formData.vm_id || formData.vm_id < 100) {
-      showNotification('VM ID must be 100 or greater.', 'error');
+    if (!validateStep(1) || !validateStep(2) || !validateStep(3)) {
       return;
-    }
-
-    // 3. Network validation (CIDR / Gateway / DNS)
-    if (formData.network.type === 'static') {
-      const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-      const cidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:3[0-2]|[1-2]?[0-9])$/;
-      
-      if (!cidrRegex.test(formData.network.ip)) {
-        showNotification('Invalid IPv4 CIDR address. Format must be IP/Mask (e.g., 192.168.1.50/24).', 'error');
-        return;
-      }
-      
-      if (formData.network.gateway && !ipRegex.test(formData.network.gateway)) {
-        showNotification('Invalid Gateway IP address.', 'error');
-        return;
-      }
-      
-      if (formData.network.dns_server && !ipRegex.test(formData.network.dns_server)) {
-        showNotification('Invalid DNS Server IP address.', 'error');
-        return;
-      }
     }
 
     setIsDeploying(true);
@@ -804,14 +877,14 @@ function App() {
         </div>
         
         {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className={`btn ${activeTab === 'deploy' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('deploy')}>
+        <nav style={{ display: 'flex', gap: '0.25rem', background: 'rgba(0, 0, 0, 0.2)', padding: '0.3rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
+          <button className={`nav-tab-btn ${activeTab === 'deploy' ? 'active' : ''}`} onClick={() => setActiveTab('deploy')}>
             <Icons.Plus /> Deploy LXC
           </button>
-          <button className={`btn ${activeTab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('dashboard')}>
+          <button className={`nav-tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
             <Icons.Activity /> Dashboard
           </button>
-          <button className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('settings')}>
+          <button className={`nav-tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
             <Icons.Settings /> Settings
           </button>
         </nav>
@@ -843,295 +916,356 @@ function App() {
         
         {/* Tab 1: Deploy Form */}
         {activeTab === 'deploy' && (
-          <form className="glass-panel" style={{ padding: '2.5rem' }} onSubmit={handleDeploy}>
-            <h2 style={{ fontSize: '1.75rem', marginBottom: '1.5rem', color: '#fff', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Create LXC Instance</h2>
+          <div className="glass-panel fade-in" style={{ padding: '2.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+              <h2 style={{ fontSize: '1.6rem', color: '#fff', margin: 0 }}>Create LXC Instance</h2>
+              <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600, background: 'rgba(99, 102, 241, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '50px' }}>
+                Step {wizardStep} of 4
+              </span>
+            </div>
             
+            {/* Visual Stepper */}
+            <div className="stepper-container">
+              <div className="stepper-line">
+                <div className="stepper-line-fill" style={{ width: `${((wizardStep - 1) / 3) * 100}%` }}></div>
+              </div>
+              <div className={`stepper-step ${wizardStep === 1 ? 'active' : ''} ${wizardStep > 1 ? 'completed' : ''}`} onClick={() => setWizardStep(1)} style={{ cursor: 'pointer' }}>
+                <div className="stepper-bubble">{wizardStep > 1 ? '✓' : '1'}</div>
+                <span className="stepper-label">General & OS</span>
+              </div>
+              <div className={`stepper-step ${wizardStep === 2 ? 'active' : ''} ${wizardStep > 2 ? 'completed' : ''}`} onClick={() => { if (validateStep(1)) setWizardStep(2); }} style={{ cursor: 'pointer' }}>
+                <div className="stepper-bubble">{wizardStep > 2 ? '✓' : '2'}</div>
+                <span className="stepper-label">Resources</span>
+              </div>
+              <div className={`stepper-step ${wizardStep === 3 ? 'active' : ''} ${wizardStep > 3 ? 'completed' : ''}`} onClick={() => { if (validateStep(1) && validateStep(2)) setWizardStep(3); }} style={{ cursor: 'pointer' }}>
+                <div className="stepper-bubble">{wizardStep > 3 ? '✓' : '3'}</div>
+                <span className="stepper-label">Network</span>
+              </div>
+              <div className={`stepper-step ${wizardStep === 4 ? 'active' : ''}`} onClick={() => { if (validateStep(1) && validateStep(2) && validateStep(3)) setWizardStep(4); }} style={{ cursor: 'pointer' }}>
+                <div className="stepper-bubble">4</div>
+                <span className="stepper-label">Provisioning</span>
+              </div>
+            </div>
+
             {/* Proxmox Host Missing Banner */}
             {!config.pm_api_url && (
               <div className="glass-card" style={{ display: 'flex', gap: '1rem', alignItems: 'center', borderColor: 'var(--accent-warning)', background: 'rgba(245, 158, 11, 0.08)', marginBottom: '2rem' }}>
                 <div style={{ color: 'var(--accent-warning)' }}><Icons.Info /></div>
                 <div>
-                  <h4 style={{ color: 'var(--accent-warning)' }}>Proxmox Credentials Missing</h4>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Configure Proxmox server integration in the <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => setActiveTab('settings')}>Settings Tab</strong> first to fetch templates & storages dynamically.</p>
+                  <h4 style={{ color: 'var(--accent-warning)', margin: 0, fontSize: '0.95rem' }}>Proxmox Credentials Missing</h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>Configure Proxmox server integration in the <strong style={{ color: '#fff', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setActiveTab('settings')}>Settings Tab</strong> first to fetch templates & storages dynamically.</p>
                 </div>
               </div>
             )}
 
-            {/* Row 1: General Details */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem' }}>General Settings</h3>
-            <div className="form-row" style={{ marginBottom: '1.5rem' }}>
-              <div className="form-group">
-                <label className="form-label">VM/CT ID</label>
-                <input type="number" required className="form-control" value={formData.vm_id} onChange={(e) => setFormData({ ...formData, vm_id: parseInt(e.target.value) })} min="100" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Hostname</label>
-                <input type="text" required placeholder="e.g. debian-web-server" className="form-control" value={formData.hostname} onChange={(e) => setFormData({ ...formData, hostname: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Root Password</label>
-                <input type="password" required placeholder="••••••••" className="form-control" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
-              </div>
-            </div>
-
-            {/* Node & Template Selector */}
-            <div className="form-row" style={{ marginBottom: '2rem' }}>
-              <div className="form-group">
-                <label className="form-label">Target Cluster Node</label>
-                {isNodesLoading ? (
-                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching nodes...</div>
-                ) : (
-                  <select className="form-control" value={formData.target_node} onChange={(e) => setFormData({ ...formData, target_node: e.target.value })} required>
-                    <option value="" disabled>-- Select Target Node --</option>
-                    {nodes.map(node => {
-                      const cpuText = node.cpu !== undefined && !isNaN(node.cpu) ? `CPU: ${(node.cpu * 100).toFixed(0)}%` : '';
-                      const memText = node.mem !== undefined && node.maxmem !== undefined && !isNaN(node.mem) && !isNaN(node.maxmem) 
-                        ? `RAM: ${(node.mem / (1024 ** 3)).toFixed(1)}GB / ${(node.maxmem / (1024 ** 3)).toFixed(1)}GB` 
-                        : '';
-                      const statusDetails = [cpuText, memText].filter(Boolean).join(', ');
-                      return (
-                        <option key={node.name} value={node.name}>
-                          {node.name} ({node.status === 'online' ? `Online${statusDetails ? `, ${statusDetails}` : ''}` : 'Offline'})
-                        </option>
-                      );
-                    })}
-                  </select>
-                )}
-              </div>
-              <div className="form-group">
-                <label className="form-label">Container Template (VZTmpl)</label>
-                {isTemplatesLoading ? (
-                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching templates from Proxmox...</div>
-                ) : (
-                  <select className="form-control" value={formData.template_file_id} onChange={(e) => setFormData({ ...formData, template_file_id: e.target.value })} required>
-                    <option value="" disabled>-- Select Template --</option>
-                    {templates.map(tmpl => (
-                      <option key={tmpl.volid} value={tmpl.volid}>
-                        {tmpl.volid.split('/').pop()} ({formatBytes(tmpl.size)})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
-
-            {/* Row 2: Hardware Settings */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem' }}>System Resources</h3>
-            <div className="form-row" style={{ marginBottom: '1.5rem' }}>
-              <div className="form-group">
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Cpu /> CPU Cores</label>
-                <input type="number" required className="form-control" value={formData.cpu_cores} onChange={(e) => setFormData({ ...formData, cpu_cores: parseInt(e.target.value) })} min="1" max="64" />
-              </div>
-              <div className="form-group">
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Ram /> RAM (MB)</label>
-                <input type="number" required className="form-control" value={formData.memory} onChange={(e) => setFormData({ ...formData, memory: parseInt(e.target.value) })} min="256" step="128" />
-              </div>
-              <div className="form-group">
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Ram /> SWAP (MB)</label>
-                <input type="number" required className="form-control" value={formData.swap} onChange={(e) => setFormData({ ...formData, swap: parseInt(e.target.value) })} min="0" step="128" />
-              </div>
-            </div>
-
-            {/* Row 3: Disk Storages */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Disk Storages</span>
-              <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={addExtraDisk}>
-                <Icons.Plus /> Add Extra Disk
-              </button>
-            </h3>
-            
-            <div className="form-row" style={{ marginBottom: '1rem' }}>
-              <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                <label className="form-label">Root Disk Target Storage</label>
-                {isStoragesLoading ? (
-                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Loading storage datastores...</div>
-                ) : (
-                  <select className="form-control" value={formData.disk_storage} onChange={(e) => setFormData({ ...formData, disk_storage: e.target.value })} required>
-                    <option value="" disabled>-- Select Storage --</option>
-                    {storages.map(st => (
-                      <option key={st.name} value={st.name}>{st.name} ({st.type})</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="form-group">
-                <label className="form-label">Root Disk Size (GB)</label>
-                <input type="number" required className="form-control" value={formData.disk_size} onChange={(e) => setFormData({ ...formData, disk_size: parseInt(e.target.value) })} min="1" />
-              </div>
-            </div>
-
-            {/* Extra Disks dynamic fields */}
-            {formData.extra_disks.map((disk, idx) => (
-              <div className="form-row glass-card" key={idx} style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.015)' }}>
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Extra Disk #{idx + 1} Storage</label>
-                  <select className="form-control" value={disk.storage} onChange={(e) => updateExtraDisk(idx, 'storage', e.target.value)} required>
-                    {storages.map(st => (
-                      <option key={st.name} value={st.name}>{st.name} ({st.type})</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Mount Point</label>
-                  <input type="text" className="form-control" placeholder="e.g. /mnt/data" value={disk.mount_point || ''} onChange={(e) => updateExtraDisk(idx, 'mount_point', e.target.value)} required />
-                </div>
-                <div className="form-group" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <label className="form-label">Size (GB)</label>
-                    <input type="number" className="form-control" value={disk.size} onChange={(e) => updateExtraDisk(idx, 'size', parseInt(e.target.value))} min="1" required />
+            {/* STEP 1: General & OS Settings */}
+            {wizardStep === 1 && (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: 0 }}>General Settings</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">VM/CT ID</label>
+                    <input type="number" required className="form-control" value={formData.vm_id} onChange={(e) => setFormData({ ...formData, vm_id: parseInt(e.target.value) || 0 })} min="100" />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>Unique CT identifier (ID &ge; 100).</span>
                   </div>
-                  <button type="button" className="btn btn-danger" style={{ height: '42px', padding: '0 0.8rem' }} onClick={() => removeExtraDisk(idx)}>
-                    <Icons.Trash />
+                  <div className="form-group">
+                    <label className="form-label">Hostname</label>
+                    <input type="text" required placeholder="e.g. debian-web-server" className="form-control" value={formData.hostname} onChange={(e) => setFormData({ ...formData, hostname: e.target.value })} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>Alphanumerics and hyphens only.</span>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Root Password</label>
+                    <input type="password" required placeholder="••••••••" className="form-control" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>Administrative login credential.</span>
+                  </div>
+                </div>
+
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: '0.5rem 0 0 0' }}>Compute & Image Location</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Target Cluster Node</label>
+                    {isNodesLoading ? (
+                      <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching nodes...</div>
+                    ) : (
+                      <select className="form-control" value={formData.target_node} onChange={(e) => setFormData({ ...formData, target_node: e.target.value })} required>
+                        <option value="" disabled>-- Select Target Node --</option>
+                        {nodes.map(node => {
+                          const cpuText = node.cpu !== undefined && !isNaN(node.cpu) ? `CPU: ${(node.cpu * 100).toFixed(0)}%` : '';
+                          const memText = node.mem !== undefined && node.maxmem !== undefined && !isNaN(node.mem) && !isNaN(node.maxmem) 
+                            ? `RAM: ${(node.mem / (1024 ** 3)).toFixed(1)}GB / ${(node.maxmem / (1024 ** 3)).toFixed(1)}GB` 
+                            : '';
+                          const statusDetails = [cpuText, memText].filter(Boolean).join(', ');
+                          return (
+                            <option key={node.name} value={node.name}>
+                              {node.name} ({node.status === 'online' ? `Online${statusDetails ? `, ${statusDetails}` : ''}` : 'Offline'})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Container Template (VZTmpl)</label>
+                    {isTemplatesLoading ? (
+                      <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching templates from Proxmox...</div>
+                    ) : (
+                      <select className="form-control" value={formData.template_file_id} onChange={(e) => setFormData({ ...formData, template_file_id: e.target.value })} required>
+                        <option value="" disabled>-- Select Template --</option>
+                        {templates.map(tmpl => (
+                          <option key={tmpl.volid} value={tmpl.volid}>
+                            {tmpl.volid.split('/').pop()} ({formatBytes(tmpl.size)})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: Resources & Disks */}
+            {wizardStep === 2 && (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: 0 }}>System Resources</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Cpu /> CPU Cores</label>
+                    <input type="number" required className="form-control" value={formData.cpu_cores} onChange={(e) => setFormData({ ...formData, cpu_cores: parseInt(e.target.value) || 1 })} min="1" max="64" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Ram /> RAM (MB)</label>
+                    <input type="number" required className="form-control" value={formData.memory} onChange={(e) => setFormData({ ...formData, memory: parseInt(e.target.value) || 512 })} min="256" step="128" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Icons.Ram /> SWAP (MB)</label>
+                    <input type="number" required className="form-control" value={formData.swap} onChange={(e) => setFormData({ ...formData, swap: parseInt(e.target.value) || 0 })} min="0" step="128" />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                  <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: 0 }}>Disk Configuration</h3>
+                  <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={addExtraDisk}>
+                    <Icons.Plus /> Add Extra Disk
                   </button>
                 </div>
-              </div>
-            ))}
+                
+                <div className="form-row">
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label className="form-label">Root Disk Target Storage</label>
+                    {isStoragesLoading ? (
+                      <div className="form-control" style={{ color: 'var(--text-muted)' }}>Loading storage datastores...</div>
+                    ) : (
+                      <select className="form-control" value={formData.disk_storage} onChange={(e) => setFormData({ ...formData, disk_storage: e.target.value })} required>
+                        <option value="" disabled>-- Select Storage --</option>
+                        {storages.map(st => (
+                          <option key={st.name} value={st.name}>{st.name} ({st.type})</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Root Disk Size (GB)</label>
+                    <input type="number" required className="form-control" value={formData.disk_size} onChange={(e) => setFormData({ ...formData, disk_size: parseInt(e.target.value) || 1 })} min="1" />
+                  </div>
+                </div>
 
-            {/* Row 4: Networking */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem', marginTop: '1.5rem' }}>Networking</h3>
-            <div className="form-row" style={{ marginBottom: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label">Network Bridge</label>
-                {isBridgesLoading ? (
-                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Loading network bridges...</div>
-                ) : (
-                  <select className="form-control" value={formData.network.bridge} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, bridge: e.target.value } })} required>
-                    <option value="" disabled>-- Select Bridge --</option>
-                    {bridges.map(br => (
-                      <option key={br.name} value={br.name}>{br.name} {br.comment ? `(${br.comment})` : ''}</option>
-                    ))}
-                  </select>
+                {/* Extra Disks dynamic fields */}
+                {formData.extra_disks.map((disk, idx) => (
+                  <div className="form-row glass-card" key={idx} style={{ padding: '1rem', background: 'rgba(255,255,255,0.015)' }}>
+                    <div className="form-group" style={{ gridColumn: 'span 2', marginBottom: 0 }}>
+                      <label className="form-label">Extra Disk #{idx + 1} Storage</label>
+                      <select className="form-control" value={disk.storage} onChange={(e) => updateExtraDisk(idx, 'storage', e.target.value)} required>
+                        {storages.map(st => (
+                          <option key={st.name} value={st.name}>{st.name} ({st.type})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Mount Point</label>
+                      <input type="text" className="form-control" placeholder="e.g. /mnt/data" value={disk.mount_point || ''} onChange={(e) => updateExtraDisk(idx, 'mount_point', e.target.value)} required />
+                    </div>
+                    <div className="form-group" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginBottom: 0 }}>
+                      <div style={{ flex: 1 }}>
+                        <label className="form-label">Size (GB)</label>
+                        <input type="number" className="form-control" value={disk.size} onChange={(e) => updateExtraDisk(idx, 'size', parseInt(e.target.value) || 1)} min="1" required />
+                      </div>
+                      <button type="button" className="btn btn-danger" style={{ height: '42px', padding: '0 0.8rem' }} onClick={() => removeExtraDisk(idx)}>
+                        <Icons.Trash />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* STEP 3: Networking Settings */}
+            {wizardStep === 3 && (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: 0 }}>Network Interfaces</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Network Bridge</label>
+                    {isBridgesLoading ? (
+                      <div className="form-control" style={{ color: 'var(--text-muted)' }}>Loading network bridges...</div>
+                    ) : (
+                      <select className="form-control" value={formData.network.bridge} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, bridge: e.target.value } })} required>
+                        <option value="" disabled>-- Select Bridge --</option>
+                        {bridges.map(br => (
+                          <option key={br.name} value={br.name}>{br.name} {br.comment ? `(${br.comment})` : ''}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">IP Allocation Policy</label>
+                    <select className="form-control" value={formData.network.type} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, type: e.target.value } })} required>
+                      <option value="dhcp">DHCP (Automatic IP)</option>
+                      <option value="static">Static IP Configuration</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">VLAN Tag (Optional)</label>
+                    <input type="number" className="form-control" value={formData.network.vlan} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, vlan: e.target.value } })} placeholder="e.g. 10" min="1" max="4094" />
+                  </div>
+                </div>
+
+                {formData.network.type === 'static' && (
+                  <div className="form-row glass-card fade-in" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.01)' }}>
+                    <div className="form-group">
+                      <label className="form-label">IPv4 Address (CIDR)</label>
+                      <input type="text" className="form-control" required placeholder="e.g. 192.168.1.50/24" value={formData.network.ip} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, ip: e.target.value } })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Gateway</label>
+                      <input type="text" className="form-control" required placeholder="e.g. 192.168.1.1" value={formData.network.gateway} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, gateway: e.target.value } })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">DNS Server (Optional)</label>
+                      <input type="text" className="form-control" placeholder="e.g. 1.1.1.1" value={formData.network.dns_server} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, dns_server: e.target.value } })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">DNS Search Domain (Optional)</label>
+                      <input type="text" className="form-control" placeholder="e.g. local.lan" value={formData.network.dns_domain} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, dns_domain: e.target.value } })} />
+                    </div>
+                  </div>
                 )}
               </div>
-              <div className="form-group">
-                <label className="form-label">Network Configuration Type</label>
-                <select className="form-control" value={formData.network.type} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, type: e.target.value } })} required>
-                  <option value="dhcp">DHCP (Automatic)</option>
-                  <option value="static">Static IP Configuration</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">VLAN Tag (Optional)</label>
-                <input type="number" className="form-control" value={formData.network.vlan} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, vlan: e.target.value } })} placeholder="e.g. 10" min="1" max="4094" />
-              </div>
-            </div>
-
-            {formData.network.type === 'static' && (
-              <div className="form-row glass-card" style={{ marginBottom: '2rem', padding: '1.5rem', background: 'rgba(255,255,255,0.01)' }}>
-                <div className="form-group">
-                  <label className="form-label">IPv4 Address (CIDR)</label>
-                  <input type="text" className="form-control" required placeholder="e.g. 192.168.1.50/24" value={formData.network.ip} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, ip: e.target.value } })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Gateway</label>
-                  <input type="text" className="form-control" required placeholder="e.g. 192.168.1.1" value={formData.network.gateway} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, gateway: e.target.value } })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">DNS Server (Optional)</label>
-                  <input type="text" className="form-control" placeholder="e.g. 1.1.1.1" value={formData.network.dns_server} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, dns_server: e.target.value } })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">DNS Search Domain (Optional)</label>
-                  <input type="text" className="form-control" placeholder="e.g. local.lan" value={formData.network.dns_domain} onChange={(e) => setFormData({ ...formData, network: { ...formData.network, dns_domain: e.target.value } })} />
-                </div>
-              </div>
             )}
 
-            {/* Provisioning & Scripts */}
-            <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1rem', marginTop: '1.5rem' }}>Provisioning & Apps</h3>
-            <div className="glass-card" style={{ padding: '2rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.01)' }}>
-              <label className="form-label" style={{ marginBottom: '1.25rem' }}>Preconfigured Applications to Install</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-                {[
-                  { id: 'docker', name: 'Docker', desc: 'Standard container engine daemon', icon: <Icons.HardDrive /> },
-                  { id: 'docker-compose', name: 'Docker Compose', desc: 'Define & run multi-container applications', icon: <Icons.Network /> },
-                  { id: 'podman', name: 'Podman', desc: 'Secure, daemonless Docker alternative', icon: <Icons.Cpu /> },
-                  { id: 'podman-compose', name: 'Podman Compose', desc: 'Run multi-container setups using Podman', icon: <Icons.Network /> },
-                  { id: 'tailscale', name: 'Tailscale', desc: 'Zero-config secure mesh VPN network', icon: <Icons.Activity /> },
-                  { id: 'nginx', name: 'Nginx', desc: 'High-performance reverse proxy & web server', icon: <Icons.Settings /> }
-                ].map(app => {
-                  const isSelected = formData.predefined_apps.includes(app.id);
-                  return (
-                    <div
-                      key={app.id}
-                      onClick={() => {
-                        setFormData(prev => ({
-                          ...prev,
-                          predefined_apps: isSelected
-                            ? prev.predefined_apps.filter(id => id !== app.id)
-                            : [...prev.predefined_apps, app.id]
-                        }));
-                      }}
-                      style={{
-                        background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.01)',
-                        border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '1.25rem',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        boxShadow: isSelected ? '0 0 15px rgba(99, 102, 241, 0.15)' : 'none',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.5rem',
-                        alignItems: 'flex-start'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
-                        <span style={{ color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)', display: 'inline-flex' }}>
-                          {app.icon}
-                        </span>
-                        <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.95rem' }}>{app.name}</span>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          readOnly
-                          style={{
-                            marginLeft: 'auto',
-                            width: '15px',
-                            height: '15px',
-                            cursor: 'pointer',
-                            accentColor: 'var(--accent-primary)'
+            {/* STEP 4: Provisioning & Finalize */}
+            {wizardStep === 4 && (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: 0 }}>Provisioning Options</h3>
+                <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.01)' }}>
+                  <label className="form-label" style={{ marginBottom: '1rem' }}>Preconfigured Applications to Install</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                    {[
+                      { id: 'docker', name: 'Docker', desc: 'Standard container engine daemon', icon: <Icons.HardDrive /> },
+                      { id: 'docker-compose', name: 'Docker Compose', desc: 'Define & run multi-container applications', icon: <Icons.Network /> },
+                      { id: 'podman', name: 'Podman', desc: 'Secure, daemonless Docker alternative', icon: <Icons.Cpu /> },
+                      { id: 'podman-compose', name: 'Podman Compose', desc: 'Run multi-container setups using Podman', icon: <Icons.Network /> },
+                      { id: 'tailscale', name: 'Tailscale', desc: 'Zero-config secure mesh VPN network', icon: <Icons.Activity /> },
+                      { id: 'nginx', name: 'Nginx', desc: 'High-performance reverse proxy & web server', icon: <Icons.Settings /> }
+                    ].map(app => {
+                      const isSelected = formData.predefined_apps.includes(app.id);
+                      return (
+                        <div
+                          key={app.id}
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              predefined_apps: isSelected
+                                ? prev.predefined_apps.filter(id => id !== app.id)
+                                : [...prev.predefined_apps, app.id]
+                            }));
                           }}
-                        />
-                      </div>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.3' }}>
-                        {app.desc}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
+                          style={{
+                            background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.01)',
+                            border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: '1rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.4rem',
+                            alignItems: 'flex-start'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
+                            <span style={{ color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)', display: 'inline-flex' }}>
+                              {app.icon}
+                            </span>
+                            <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.9rem' }}>{app.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              readOnly
+                              style={{
+                                marginLeft: 'auto',
+                                width: '14px',
+                                height: '14px',
+                                cursor: 'pointer',
+                                accentColor: 'var(--accent-primary)'
+                              }}
+                            />
+                          </div>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.3' }}>
+                            {app.desc}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-              <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem' }}>
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', textTransform: 'none', margin: 0, color: '#fff' }}>
-                  <input type="checkbox" checked={enableCustomScript} onChange={(e) => {
-                    setEnableCustomScript(e.target.checked);
-                    if (!e.target.checked) setFormData(prev => ({ ...prev, custom_script: '' }));
-                  }} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                  Enable Custom Provisioning Script
-                </label>
-              </div>
-            </div>
+                  <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem' }}>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', textTransform: 'none', margin: 0, color: '#fff' }}>
+                      <input type="checkbox" checked={enableCustomScript} onChange={(e) => {
+                        setEnableCustomScript(e.target.checked);
+                        if (!e.target.checked) setFormData(prev => ({ ...prev, custom_script: '' }));
+                      }} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                      Enable Custom Provisioning Script
+                    </label>
+                  </div>
+                </div>
 
-            {enableCustomScript && (
-              <div className="form-group" style={{ marginBottom: '2rem' }}>
-                <label className="form-label">Custom Provisioning Bash Script</label>
-                <textarea rows="5" className="form-control" placeholder="# Write your custom script here&#10;apt-get update &amp;&amp; apt-get install -y git neofetch" value={formData.custom_script} onChange={(e) => setFormData({ ...formData, custom_script: e.target.value })} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.85rem' }}></textarea>
+                {enableCustomScript && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Custom Provisioning Bash Script</label>
+                    <textarea rows="4" className="form-control" placeholder="# Write your custom script here&#10;apt-get update &amp;&amp; apt-get install -y git neofetch" value={formData.custom_script} onChange={(e) => setFormData({ ...formData, custom_script: e.target.value })} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.85rem' }}></textarea>
+                  </div>
+                )}
+
+                {/* SSH Public Keys */}
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">SSH Public Keys (One per line, optional)</label>
+                  <textarea rows="3" className="form-control" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC..." value={formData.ssh_keys} onChange={(e) => setFormData({ ...formData, ssh_keys: e.target.value })} style={{ resize: 'vertical' }}></textarea>
+                </div>
               </div>
             )}
 
-            {/* SSH Public Keys */}
-            <div className="form-group" style={{ marginBottom: '2rem' }}>
-              <label className="form-label">SSH Public Keys (One per line, optional)</label>
-              <textarea rows="3" className="form-control" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC..." value={formData.ssh_keys} onChange={(e) => setFormData({ ...formData, ssh_keys: e.target.value })} style={{ resize: 'vertical' }}></textarea>
+            {/* Stepper Navigation Footer */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginTop: '2.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
+              <div>
+                {wizardStep > 1 && (
+                  <button type="button" className="btn btn-secondary" onClick={() => setWizardStep(prev => prev - 1)}>
+                    Back
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                {wizardStep < 4 ? (
+                  <button type="button" className="btn btn-primary" onClick={() => { if (validateStep(wizardStep)) setWizardStep(prev => prev + 1); }}>
+                    Continue
+                  </button>
+                ) : (
+                  <button type="button" disabled={isDeploying || templates.length === 0} className="btn btn-primary" style={{ padding: '0.65rem 2rem' }} onClick={() => handleDeploy()}>
+                    {isDeploying ? 'Starting Pipeline...' : 'Deploy Container'}
+                  </button>
+                )}
+              </div>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-              <button type="submit" disabled={isDeploying || templates.length === 0} className="btn btn-primary" style={{ padding: '0.85rem 2.5rem' }}>
-                {isDeploying ? 'Starting Pipeline...' : 'Deploy Container'}
-              </button>
-            </div>
-          </form>
+          </div>
         )}
 
         {/* Tab 2: Dashboard / Reporting */}
@@ -1290,53 +1424,53 @@ function App() {
                               )}
                             </td>
 
-                            {/* Real-time resource usage from Proxmox */}
-                            <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.8rem', width: '240px' }}>
-                              {isRunning ? (
-                                <div>
-                                  <div style={{ marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span>CPU: <strong style={{ color: '#fff' }}>{(dep.proxmox_status.cpu * 100).toFixed(1)}%</strong></span>
-                                    {drawSparkline(dep.history, 'cpu', 100)}
-                                  </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span>RAM: <strong style={{ color: '#fff' }}>{Math.round(dep.proxmox_status.mem / (1024 * 1024))} MB</strong></span>
-                                    {drawSparkline(dep.history, 'mem', dep.memory || 1024)}
-                                  </div>
-                                </div>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>—</span>
-                              )}
-                            </td>
+                             {/* Real-time resource usage from Proxmox */}
+                             <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.8rem', width: '240px' }}>
+                               {isRunning ? (
+                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                     <span>CPU: <strong style={{ color: '#fff' }}>{(dep.proxmox_status.cpu * 100).toFixed(1)}%</strong></span>
+                                     {drawSparkline(dep.history, 'cpu', 100, 'var(--accent-primary)')}
+                                   </div>
+                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                     <span>RAM: <strong style={{ color: '#fff' }}>{Math.round(dep.proxmox_status.mem / (1024 * 1024))} MB</strong></span>
+                                     {drawSparkline(dep.history, 'mem', dep.memory || 1024, 'var(--accent-info)')}
+                                   </div>
+                                 </div>
+                               ) : (
+                                 <span style={{ color: 'var(--text-muted)' }}>—</span>
+                               )}
+                             </td>
 
-                            {/* Actions */}
-                            <td style={{ padding: '1.25rem 0.75rem', textAlign: 'right' }}>
-                              <div style={{ display: 'inline-flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                {dep.status === 'active' && (
-                                  <button className="btn btn-secondary" title="Manage Snapshots" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => openSnapshotsModal(dep)}>
-                                    📸 Snapshots
-                                  </button>
-                                )}
-                                <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => viewLogs(dep.id)}>
-                                  <Icons.ExternalLink /> logs
-                                </button>
-                                {dep.status !== 'destroyed' && dep.status !== 'destroying' && (
-                                  <button className="btn btn-danger" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleDestroy(dep.id)}>
-                                    <Icons.Trash />
-                                  </button>
-                                )}
-                                {dep.archived ? (
-                                  <button className="btn btn-secondary" title="Restore from archive" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleUnarchive(dep.id)}>
-                                    <Icons.FolderOpen /> Restore
-                                  </button>
-                                ) : (
-                                  (dep.status === 'failed' || dep.status === 'destroyed') && (
-                                    <button className="btn btn-secondary" title="Archive" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleArchive(dep.id)}>
-                                      <Icons.Archive /> Archive
-                                    </button>
-                                  )
-                                )}
-                              </div>
-                            </td>
+                             {/* Actions */}
+                             <td style={{ padding: '1.25rem 0.75rem', textAlign: 'right' }}>
+                               <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                 <button className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', height: '32px' }} onClick={() => viewLogs(dep.id)} title="View Build/Terraform Logs">
+                                   <Icons.ExternalLink /> Logs
+                                 </button>
+                                 {dep.status === 'active' && (
+                                   <button className="btn btn-secondary" title="Manage Snapshots" style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', height: '32px' }} onClick={() => openSnapshotsModal(dep)}>
+                                     📸 Snapshots
+                                   </button>
+                                 )}
+                                 {dep.archived ? (
+                                   <button className="btn btn-secondary" title="Restore from archive" style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', height: '32px' }} onClick={() => handleUnarchive(dep.id)}>
+                                     <Icons.FolderOpen /> Restore
+                                   </button>
+                                 ) : (
+                                   (dep.status === 'failed' || dep.status === 'destroyed') && (
+                                     <button className="btn btn-secondary" title="Archive" style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', height: '32px' }} onClick={() => handleArchive(dep.id)}>
+                                       <Icons.Archive /> Archive
+                                     </button>
+                                   )
+                                 )}
+                                 {dep.status !== 'destroyed' && dep.status !== 'destroying' && (
+                                   <button className="btn btn-danger" style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', height: '32px' }} onClick={() => handleDestroy(dep.id)} title="Destroy Container">
+                                     <Icons.Trash />
+                                   </button>
+                                 )}
+                               </div>
+                             </td>
 
                           </tr>
                         );
@@ -1502,325 +1636,354 @@ function App() {
 
         {/* Tab 3: Settings Page */}
         {activeTab === 'settings' && (
-          <div className="glass-panel" style={{ padding: '2.5rem' }}>
+          <div className="glass-panel fade-in" style={{ padding: '2.5rem' }}>
             <h2 style={{ fontSize: '1.75rem', marginBottom: '1.5rem', color: '#fff', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>Configuration Settings</h2>
             
+            {/* Settings Sub-Tabs Navigation */}
+            <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(0, 0, 0, 0.15)', padding: '0.25rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)', marginBottom: '2rem', flexWrap: 'wrap' }}>
+              <button type="button" className={`nav-tab-btn ${settingsSubTab === 'credentials' ? 'active' : ''}`} onClick={() => setSettingsSubTab('credentials')} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                🔑 API Credentials
+              </button>
+              <button type="button" className={`nav-tab-btn ${settingsSubTab === 'policies' ? 'active' : ''}`} onClick={() => setSettingsSubTab('policies')} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                ⚙️ Defaults & Policies
+              </button>
+              <button type="button" className={`nav-tab-btn ${settingsSubTab === 'templates' ? 'active' : ''}`} onClick={() => setSettingsSubTab('templates')} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                📦 Template Manager
+              </button>
+              <button type="button" className={`nav-tab-btn ${settingsSubTab === 'ssh' ? 'active' : ''}`} onClick={() => setSettingsSubTab('ssh')} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                💻 Default SSH Keys
+              </button>
+            </div>
+
             <form onSubmit={handleSaveConfig}>
-               <div className="form-group">
-                <label className="form-label">Proxmox API Gateway Hostname or IP Address URL</label>
-                <input type="text" required placeholder="https://192.168.1.100:8006/api2/json" className="form-control" value={config.pm_api_url} onChange={(e) => setConfig({ ...config, pm_api_url: e.target.value })} />
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>Ensure the URL points to your Proxmox API node endpoint. Default port is 8006.</span>
-              </div>
+               {/* Section 1: API Connection */}
+               {settingsSubTab === 'credentials' && (
+                 <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                   <div className="form-group" style={{ marginBottom: 0 }}>
+                     <label className="form-label">Proxmox API Gateway Hostname or IP Address URL</label>
+                     <input type="text" required placeholder="https://192.168.1.100:8006/api2/json" className="form-control" value={config.pm_api_url} onChange={(e) => setConfig({ ...config, pm_api_url: e.target.value })} />
+                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>Ensure the URL points to your Proxmox API node endpoint. Default port is 8006.</span>
+                   </div>
 
-              <div className="form-row" style={{ marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Proxmox API Token ID</label>
-                  <input type="text" placeholder="e.g. root@pam!terraform" className="form-control" value={config.pm_api_token_id} onChange={(e) => setConfig({ ...config, pm_api_token_id: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Proxmox API Token Secret</label>
-                  <input type="password" placeholder="••••••••••••" className="form-control" value={config.pm_api_token_secret} onChange={(e) => setConfig({ ...config, pm_api_token_secret: e.target.value })} />
-                </div>
-              </div>
+                   <div className="form-row">
+                     <div className="form-group" style={{ marginBottom: 0 }}>
+                       <label className="form-label">Proxmox API Token ID</label>
+                       <input type="text" placeholder="e.g. root@pam!terraform" className="form-control" value={config.pm_api_token_id} onChange={(e) => setConfig({ ...config, pm_api_token_id: e.target.value })} />
+                     </div>
+                     <div className="form-group" style={{ marginBottom: 0 }}>
+                       <label className="form-label">Proxmox API Token Secret</label>
+                       <input type="password" placeholder="••••••••••••" className="form-control" value={config.pm_api_token_secret} onChange={(e) => setConfig({ ...config, pm_api_token_secret: e.target.value })} />
+                     </div>
+                   </div>
 
-              <div className="form-row" style={{ marginBottom: '2rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Target Proxmox Node Name</label>
-                  <input type="text" required placeholder="e.g. pve" className="form-control" value={config.node_name} onChange={(e) => setConfig({ ...config, node_name: e.target.value })} />
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>The actual name of the Proxmox host (e.g. pve), NOT the IP address.</span>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">CT Template Storage Pool Name</label>
-                  <input type="text" required placeholder="e.g. local" className="form-control" value={config.template_storage} onChange={(e) => setConfig({ ...config, template_storage: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Default Network Bridge</label>
-                  <input type="text" required placeholder="e.g. vmbr0" className="form-control" value={config.default_bridge} onChange={(e) => setConfig({ ...config, default_bridge: e.target.value })} />
-                </div>
-              </div>
+                   <div className="form-row">
+                     <div className="form-group" style={{ marginBottom: 0 }}>
+                       <label className="form-label">Target Proxmox Node Name</label>
+                       <input type="text" required placeholder="e.g. pve" className="form-control" value={config.node_name} onChange={(e) => setConfig({ ...config, node_name: e.target.value })} />
+                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>The actual name of the Proxmox host (e.g. pve), NOT the IP address.</span>
+                     </div>
+                     <div className="form-group" style={{ marginBottom: 0 }}>
+                       <label className="form-label">CT Template Storage Pool Name</label>
+                       <input type="text" required placeholder="e.g. local" className="form-control" value={config.template_storage} onChange={(e) => setConfig({ ...config, template_storage: e.target.value })} />
+                     </div>
+                     <div className="form-group" style={{ marginBottom: 0 }}>
+                       <label className="form-label">Default Network Bridge</label>
+                       <input type="text" required placeholder="e.g. vmbr0" className="form-control" value={config.default_bridge} onChange={(e) => setConfig({ ...config, default_bridge: e.target.value })} />
+                     </div>
+                   </div>
+                 </div>
+               )}
 
-              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+               {/* Section 2: Policies & Defaults */}
+               {settingsSubTab === 'policies' && (
+                 <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                   <div>
+                     <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', marginBottom: '0.75rem' }}>Resource Exclusions</h3>
+                     <div className="form-row">
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Excluded Storage Pools</label>
+                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>Select storage pools to hide them from the Deploy storage dropdowns.</span>
+                         
+                         {isAllResourcesLoading ? (
+                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Scanning Proxmox storage pools...</div>
+                         ) : (
+                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                             {allStorages.map(st => {
+                               const isExcluded = (config.excluded_storages || '')
+                                 .split(',')
+                                 .map(s => s.trim().toLowerCase())
+                                 .includes(st.name.toLowerCase());
+                               return (
+                                 <button
+                                   key={st.name}
+                                   type="button"
+                                   onClick={() => {
+                                     const currentList = (config.excluded_storages || '')
+                                       .split(',')
+                                       .map(s => s.trim())
+                                       .filter(Boolean);
+                                     let newList;
+                                     if (isExcluded) {
+                                       newList = currentList.filter(s => s.toLowerCase() !== st.name.toLowerCase());
+                                     } else {
+                                       newList = [...currentList, st.name];
+                                     }
+                                     setConfig({ ...config, excluded_storages: newList.join(',') });
+                                   }}
+                                   style={{
+                                     background: isExcluded ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                                     border: isExcluded ? '1px solid var(--accent-error)' : '1px solid rgba(16, 185, 129, 0.3)',
+                                     borderRadius: 'var(--radius-sm)',
+                                     padding: '0.35rem 0.75rem',
+                                     color: '#fff',
+                                     fontSize: '0.8rem',
+                                     cursor: 'pointer',
+                                     display: 'flex',
+                                     alignItems: 'center',
+                                     gap: '0.35rem',
+                                     transition: 'all 0.2s ease'
+                                   }}
+                                 >
+                                   <span style={{
+                                     width: '6px',
+                                     height: '6px',
+                                     borderRadius: '50%',
+                                     background: isExcluded ? 'var(--accent-error)' : 'var(--accent-success)'
+                                   }}></span>
+                                   {st.name} <span style={{ opacity: 0.6, fontSize: '0.7rem' }}>({st.type})</span>
+                                 </button>
+                               );
+                             })}
+                             {allStorages.length === 0 && (
+                               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>No storages found. Configure credentials and check network state.</span>
+                             )}
+                           </div>
+                         )}
+                         <input type="hidden" name="excluded_storages" value={config.excluded_storages || ''} />
+                       </div>
 
-              {/* Section 2: Resource Exclusions */}
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Resource Exclusions</h3>
-              <div className="form-row" style={{ marginBottom: '2rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Excluded Storage Pools</label>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'block' }}>Select storage pools to hide them from the Deploy storage dropdowns.</span>
-                  
-                  {isAllResourcesLoading ? (
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Scanning Proxmox storage pools...</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.5rem' }}>
-                      {allStorages.map(st => {
-                        const isExcluded = (config.excluded_storages || '')
-                          .split(',')
-                          .map(s => s.trim().toLowerCase())
-                          .includes(st.name.toLowerCase());
-                        return (
-                          <button
-                            key={st.name}
-                            type="button"
-                            onClick={() => {
-                              const currentList = (config.excluded_storages || '')
-                                .split(',')
-                                .map(s => s.trim())
-                                .filter(Boolean);
-                              let newList;
-                              if (isExcluded) {
-                                newList = currentList.filter(s => s.toLowerCase() !== st.name.toLowerCase());
-                              } else {
-                                newList = [...currentList, st.name];
-                              }
-                              setConfig({ ...config, excluded_storages: newList.join(',') });
-                            }}
-                            style={{
-                              background: isExcluded ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.08)',
-                              border: isExcluded ? '1px solid var(--accent-error)' : '1px solid rgba(16, 185, 129, 0.4)',
-                              borderRadius: 'var(--radius-sm)',
-                              padding: '0.4rem 0.8rem',
-                              color: '#fff',
-                              fontSize: '0.85rem',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.4rem',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
-                            <span style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              background: isExcluded ? 'var(--accent-error)' : 'var(--accent-success)'
-                            }}></span>
-                            {st.name} <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>({st.type})</span>
-                          </button>
-                        );
-                      })}
-                      {allStorages.length === 0 && (
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No storages found. Configure and test your Proxmox credentials first.</span>
-                      )}
-                    </div>
-                  )}
-                  <input type="hidden" name="excluded_storages" value={config.excluded_storages || ''} />
-                </div>
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Excluded Network Bridges</label>
+                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>Select network bridges to hide them from the Deploy bridge dropdowns.</span>
+                         
+                         {isAllResourcesLoading ? (
+                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Scanning network interfaces...</div>
+                         ) : (
+                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                             {allBridges.map(br => {
+                               const isExcluded = (config.excluded_bridges || '')
+                                 .split(',')
+                                 .map(b => b.trim().toLowerCase())
+                                 .includes(br.name.toLowerCase());
+                               return (
+                                 <button
+                                   key={br.name}
+                                   type="button"
+                                   onClick={() => {
+                                     const currentList = (config.excluded_bridges || '')
+                                       .split(',')
+                                       .map(b => b.trim())
+                                       .filter(Boolean);
+                                     let newList;
+                                     if (isExcluded) {
+                                       newList = currentList.filter(b => b.toLowerCase() !== br.name.toLowerCase());
+                                     } else {
+                                       newList = [...currentList, br.name];
+                                     }
+                                     setConfig({ ...config, excluded_bridges: newList.join(',') });
+                                   }}
+                                   style={{
+                                     background: isExcluded ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                                     border: isExcluded ? '1px solid var(--accent-error)' : '1px solid rgba(16, 185, 129, 0.3)',
+                                     borderRadius: 'var(--radius-sm)',
+                                     padding: '0.35rem 0.75rem',
+                                     color: '#fff',
+                                     fontSize: '0.8rem',
+                                     cursor: 'pointer',
+                                     display: 'flex',
+                                     alignItems: 'center',
+                                     gap: '0.35rem',
+                                     transition: 'all 0.2s ease'
+                                   }}
+                                 >
+                                   <span style={{
+                                     width: '6px',
+                                     height: '6px',
+                                     borderRadius: '50%',
+                                     background: isExcluded ? 'var(--accent-error)' : 'var(--accent-success)'
+                                   }}></span>
+                                   {br.name} {br.comment ? <span style={{ opacity: 0.6, fontSize: '0.7rem' }}>({br.comment})</span> : ''}
+                                 </button>
+                               );
+                             })}
+                             {allBridges.length === 0 && (
+                               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>No network bridges found. Configure credentials and check network state.</span>
+                             )}
+                           </div>
+                         )}
+                         <input type="hidden" name="excluded_bridges" value={config.excluded_bridges || ''} />
+                       </div>
+                     </div>
+                   </div>
 
-                <div className="form-group">
-                  <label className="form-label">Excluded Network Bridges</label>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'block' }}>Select network bridges to hide them from the Deploy bridge dropdowns.</span>
-                  
-                  {isAllResourcesLoading ? (
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Scanning network interfaces...</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.5rem' }}>
-                      {allBridges.map(br => {
-                        const isExcluded = (config.excluded_bridges || '')
-                          .split(',')
-                          .map(b => b.trim().toLowerCase())
-                          .includes(br.name.toLowerCase());
-                        return (
-                          <button
-                            key={br.name}
-                            type="button"
-                            onClick={() => {
-                              const currentList = (config.excluded_bridges || '')
-                                .split(',')
-                                .map(b => b.trim())
-                                .filter(Boolean);
-                              let newList;
-                              if (isExcluded) {
-                                newList = currentList.filter(b => b.toLowerCase() !== br.name.toLowerCase());
-                              } else {
-                                newList = [...currentList, br.name];
-                              }
-                              setConfig({ ...config, excluded_bridges: newList.join(',') });
-                            }}
-                            style={{
-                              background: isExcluded ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.08)',
-                              border: isExcluded ? '1px solid var(--accent-error)' : '1px solid rgba(16, 185, 129, 0.4)',
-                              borderRadius: 'var(--radius-sm)',
-                              padding: '0.4rem 0.8rem',
-                              color: '#fff',
-                              fontSize: '0.85rem',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.4rem',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
-                            <span style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              background: isExcluded ? 'var(--accent-error)' : 'var(--accent-success)'
-                            }}></span>
-                            {br.name} {br.comment ? <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>({br.comment})</span> : ''}
-                          </button>
-                        );
-                      })}
-                      {allBridges.length === 0 && (
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No network bridges found. Configure and test your Proxmox credentials first.</span>
-                      )}
-                    </div>
-                  )}
-                  <input type="hidden" name="excluded_bridges" value={config.excluded_bridges || ''} />
-                </div>
-              </div>
+                   <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '0.5rem 0' }} />
 
-              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+                   <div>
+                     <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', marginBottom: '0.75rem' }}>Default Deployment Resources</h3>
+                     <div className="form-row" style={{ marginBottom: '1rem' }}>
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Default CPU Cores</label>
+                         <input type="number" className="form-control" min="1" max="64" value={config.default_cpu_cores !== undefined ? config.default_cpu_cores : 1} onChange={(e) => setConfig({ ...config, default_cpu_cores: parseInt(e.target.value) || 1 })} />
+                       </div>
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Default RAM (MB)</label>
+                         <input type="number" className="form-control" min="256" step="128" value={config.default_memory !== undefined ? config.default_memory : 1024} onChange={(e) => setConfig({ ...config, default_memory: parseInt(e.target.value) || 1024 })} />
+                       </div>
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Default Swap (MB)</label>
+                         <input type="number" className="form-control" min="0" step="128" value={config.default_swap !== undefined ? config.default_swap : 512} onChange={(e) => setConfig({ ...config, default_swap: parseInt(e.target.value) || 512 })} />
+                       </div>
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Default Disk Size (GB)</label>
+                         <input type="number" className="form-control" min="1" value={config.default_disk_size !== undefined ? config.default_disk_size : 8} onChange={(e) => setConfig({ ...config, default_disk_size: parseInt(e.target.value) || 8 })} />
+                       </div>
+                     </div>
 
-              {/* Section 3: Default Resource Sizing */}
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Default Deployment Resources</h3>
-              <div className="form-row" style={{ marginBottom: '2rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Default CPU Cores</label>
-                  <input type="number" className="form-control" min="1" max="64" value={config.default_cpu_cores !== undefined ? config.default_cpu_cores : 1} onChange={(e) => setConfig({ ...config, default_cpu_cores: parseInt(e.target.value) || 1 })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Default RAM (MB)</label>
-                  <input type="number" className="form-control" min="256" step="128" value={config.default_memory !== undefined ? config.default_memory : 1024} onChange={(e) => setConfig({ ...config, default_memory: parseInt(e.target.value) || 1024 })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Default Swap (MB)</label>
-                  <input type="number" className="form-control" min="0" step="128" value={config.default_swap !== undefined ? config.default_swap : 512} onChange={(e) => setConfig({ ...config, default_swap: parseInt(e.target.value) || 512 })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Default Disk Size (GB)</label>
-                  <input type="number" className="form-control" min="1" value={config.default_disk_size !== undefined ? config.default_disk_size : 8} onChange={(e) => setConfig({ ...config, default_disk_size: parseInt(e.target.value) || 8 })} />
-                </div>
-              </div>
+                     <div className="form-row">
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Default DNS Server</label>
+                         <input type="text" placeholder="e.g. 1.1.1.1" className="form-control" value={config.default_dns_server || ''} onChange={(e) => setConfig({ ...config, default_dns_server: e.target.value })} />
+                       </div>
+                       <div className="form-group" style={{ marginBottom: 0 }}>
+                         <label className="form-label">Default Search Domain</label>
+                         <input type="text" placeholder="e.g. local.lan" className="form-control" value={config.default_dns_domain || ''} onChange={(e) => setConfig({ ...config, default_dns_domain: e.target.value })} />
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               )}
 
-              <div className="form-row" style={{ marginBottom: '2rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Default DNS Server</label>
-                  <input type="text" placeholder="e.g. 1.1.1.1" className="form-control" value={config.default_dns_server || ''} onChange={(e) => setConfig({ ...config, default_dns_server: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Default Search Domain</label>
-                  <input type="text" placeholder="e.g. local.lan" className="form-control" value={config.default_dns_domain || ''} onChange={(e) => setConfig({ ...config, default_dns_domain: e.target.value })} />
-                </div>
-              </div>
+               {/* Section 3: Template Downloader */}
+               {settingsSubTab === 'templates' && (
+                 <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                   <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.015)', position: 'relative', zIndex: 10 }}>
+                     <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>Download Container Templates</h3>
+                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '1.25rem' }}>
+                       Download official container OS templates from Proxmox repositories directly to your template storage pool.
+                     </span>
+                     
+                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                       <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                         <label className="form-label" style={{ fontSize: '0.75rem' }}>OS Template Catalog</label>
+                         <SearchableSelect
+                           options={aplinfoTemplates.map(item => ({
+                             value: item.template,
+                             label: `[${item.section}] ${item.headline || item.template} (v${item.version})`
+                           }))}
+                           value={selectedDownloadTemplate}
+                           onChange={setSelectedDownloadTemplate}
+                           placeholder="-- Choose a template to download --"
+                           disabled={isDownloadingTemplate || !config.pm_api_url}
+                         />
+                       </div>
 
-              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+                       <button
+                         type="button"
+                         disabled={isDownloadingTemplate || !config.pm_api_url}
+                         className="btn btn-primary"
+                         style={{ height: '42px', padding: '0 1.5rem', flexShrink: 0 }}
+                         onClick={() => {
+                           const templateVal = selectedDownloadTemplate;
+                           const storageVal = config.template_storage || 'local';
+                           if (!templateVal) {
+                             showNotification('Please select a template to download first.', 'error');
+                             return;
+                           }
+                           setIsDownloadingTemplate(true);
 
-              {/* Section 5: Template Downloader */}
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Download Container Templates</h3>
-              <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.015)', marginBottom: '2rem', position: 'relative', zIndex: 10 }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '1rem' }}>
-                  Download official container OS templates from Proxmox repositories directly to your template storage pool.
-                </span>
-                
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                    <label className="form-label" style={{ fontSize: '0.75rem' }}>OS Template Catalog</label>
-                    <SearchableSelect
-                      options={aplinfoTemplates.map(item => ({
-                        value: item.template,
-                        label: `[${item.section}] ${item.headline || item.template} (v${item.version})`
-                      }))}
-                      value={selectedDownloadTemplate}
-                      onChange={setSelectedDownloadTemplate}
-                      placeholder="-- Choose a template to download --"
-                      disabled={isDownloadingTemplate || !config.pm_api_url}
-                    />
-                  </div>
+                           const node = config.node_name || 'pve';
+                           fetch(`${API_BASE}/proxmox/apldownload/${node}`, {
+                             method: 'POST',
+                             headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({ template: templateVal, storage: storageVal })
+                           })
+                             .then(res => res.json())
+                             .then(data => {
+                               if (data.success) {
+                                 showNotification('Template download task initiated on Proxmox cluster!');
+                                 loadProxmoxData();
+                               } else {
+                                 showNotification(data.error || 'Failed to start download task.', 'error');
+                               }
+                             })
+                             .catch(() => showNotification('Error initiating template download.', 'error'))
+                             .finally(() => setIsDownloadingTemplate(false));
+                         }}
+                       >
+                         {isDownloadingTemplate ? 'Downloading...' : 'Download Template'}
+                       </button>
+                     </div>
+                   </div>
 
-                  <button
-                    type="button"
-                    disabled={isDownloadingTemplate || !config.pm_api_url}
-                    className="btn btn-primary"
-                    style={{ height: '42px', padding: '0 1.5rem', flexShrink: 0 }}
-                    onClick={() => {
-                      const templateVal = selectedDownloadTemplate;
-                      const storageVal = config.template_storage || 'local';
-                      if (!templateVal) {
-                        showNotification('Please select a template to download first.', 'error');
-                        return;
-                      }
-                      setIsDownloadingTemplate(true);
+                   <div>
+                     <h4 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.75rem' }}>Downloaded Container Templates</h4>
+                     <div className="glass-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--glass-border)' }}>
+                       {isTemplatesLoading ? (
+                         <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading templates...</div>
+                       ) : templates.length === 0 ? (
+                         <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>No container templates downloaded yet on storage pool. Use catalog above to download one.</div>
+                       ) : (
+                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto' }}>
+                           {templates.map(tmpl => {
+                             const name = tmpl.volid.split('/').pop();
+                             return (
+                               <div key={tmpl.volid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.03)' }}>
+                                 <div>
+                                   <div style={{ fontWeight: 500, color: '#fff', fontSize: '0.85rem' }}>{name}</div>
+                                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>Storage: {tmpl.volid.split(':')[0]} • Size: {formatBytes(tmpl.size)}</div>
+                                 </div>
+                                 <button
+                                   type="button"
+                                   className="btn btn-danger"
+                                   title="Delete template from storage"
+                                   style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                   onClick={() => handleDeleteTemplate(tmpl.volid)}
+                                 >
+                                   <Icons.Trash /> Delete
+                                 </button>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       )}
+                     </div>
+                   </div>
+                 </div>
+               )}
 
-                      const node = config.node_name || 'pve';
-                      fetch(`${API_BASE}/proxmox/apldownload/${node}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ template: templateVal, storage: storageVal })
-                      })
+               {/* Section 4: Default SSH Keys */}
+               {settingsSubTab === 'ssh' && (
+                 <div className="form-group fade-in" style={{ marginBottom: 0 }}>
+                   <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', marginBottom: '0.75rem' }}>Default SSH Public Keys</h3>
+                   <label className="form-label">SSH Public Keys (One per line)</label>
+                   <textarea rows="6" className="form-control" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC..." value={config.default_ssh_keys || ''} onChange={(e) => setConfig({ ...config, default_ssh_keys: e.target.value })} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.8rem' }}></textarea>
+                 </div>
+               )}
 
-                        .then(res => res.json())
-                        .then(data => {
-                          if (data.success) {
-                            showNotification('Template download task initiated on Proxmox cluster!');
-                            loadProxmoxData(); // Reload templates list
-                          } else {
-                            showNotification(data.error || 'Failed to start download task.', 'error');
-                          }
-                        })
-                        .catch(() => showNotification('Error initiating template download.', 'error'))
-                        .finally(() => setIsDownloadingTemplate(false));
-                    }}
-                  >
-                    {isDownloadingTemplate ? 'Downloading...' : 'Download Template'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Section 5b: Downloaded Templates List */}
-              <h4 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Downloaded Container Templates</h4>
-              <div className="glass-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--glass-border)' }}>
-                {isTemplatesLoading ? (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading templates...</div>
-                ) : templates.length === 0 ? (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>No container templates downloaded yet on storage pool. Use catalog above to download one.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {templates.map(tmpl => {
-                      const name = tmpl.volid.split('/').pop();
-                      return (
-                        <div key={tmpl.volid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.03)' }}>
-                          <div>
-                            <div style={{ fontWeight: 500, color: '#fff', fontSize: '0.9rem' }}>{name}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Storage: {tmpl.volid.split(':')[0]} • Size: {formatBytes(tmpl.size)}</div>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-danger"
-                            title="Delete template from storage"
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                            onClick={() => handleDeleteTemplate(tmpl.volid)}
-                          >
-                            <Icons.Trash /> Delete
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
-
-              {/* Section 4: Default SSH Keys */}
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Default SSH Public Keys</h3>
-              <div className="form-group" style={{ marginBottom: '2.5rem' }}>
-                <label className="form-label">SSH Public Keys (One per line)</label>
-                <textarea rows="4" className="form-control" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC..." value={config.default_ssh_keys || ''} onChange={(e) => setConfig({ ...config, default_ssh_keys: e.target.value })} style={{ resize: 'vertical' }}></textarea>
-              </div>
-
-              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between', marginTop: '2rem' }}>
-                <button type="button" className="btn btn-danger" onClick={handleClearConfig} style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.25) 100%)', border: '1px solid var(--accent-error)', boxShadow: 'none' }}>
-                  Clear All Settings
-                </button>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button type="button" disabled={isTestingConfig} className="btn btn-secondary" onClick={handleTestConfig}>
-                    {isTestingConfig ? 'Testing...' : 'Test Connection'}
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    Save Changes
-                  </button>
-                </div>
-              </div>
+               {/* Action Footer Buttons */}
+               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between', marginTop: '2.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
+                 <button type="button" className="btn btn-danger" onClick={handleClearConfig} style={{ background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.15) 0%, rgba(225, 29, 72, 0.25) 100%)', border: '1px solid var(--accent-error)', boxShadow: 'none' }}>
+                   Clear All Settings
+                 </button>
+                 <div style={{ display: 'flex', gap: '1rem' }}>
+                   <button type="button" disabled={isTestingConfig} className="btn btn-secondary" onClick={handleTestConfig}>
+                     {isTestingConfig ? 'Testing...' : 'Test Connection'}
+                   </button>
+                   <button type="submit" className="btn btn-primary" style={{ padding: '0.65rem 2rem' }}>
+                     Save Changes
+                   </button>
+                 </div>
+               </div>
             </form>
           </div>
         )}
