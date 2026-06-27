@@ -15,6 +15,7 @@ app.use(express.json());
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 const DB_PATH = path.join(__dirname, 'db.json');
 const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+const metricsHistory = {};
 
 // Ensure directories and files exist
 if (!fs.existsSync(DEPLOYMENTS_DIR)) {
@@ -126,6 +127,17 @@ function proxmoxRequest(method, pathUrl, data = null, customConfig = null) {
 
   const tokenHeader = `PVEAPIToken=${config.pm_api_token_id}=${config.pm_api_token_secret}`;
 
+  let requestBody = null;
+  let contentType = 'application/json';
+  if (data) {
+    if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
+      requestBody = new URLSearchParams(data).toString();
+      contentType = 'application/x-www-form-urlencoded';
+    } else {
+      requestBody = JSON.stringify(data);
+    }
+  }
+
   const options = {
     hostname: url.hostname,
     port: url.port || 8006,
@@ -134,10 +146,12 @@ function proxmoxRequest(method, pathUrl, data = null, customConfig = null) {
     headers: {
       'Authorization': tokenHeader,
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': contentType,
+      ...(requestBody ? { 'Content-Length': Buffer.byteLength(requestBody) } : {})
     },
     rejectUnauthorized: false // Often Proxmox uses self-signed certs
   };
+
 
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res) => {
@@ -159,11 +173,12 @@ function proxmoxRequest(method, pathUrl, data = null, customConfig = null) {
 
     req.on('error', (err) => reject(err));
 
-    if (data) {
-      req.write(JSON.stringify(data));
+    if (requestBody) {
+      req.write(requestBody);
     }
     req.end();
   });
+
 }
 
 // -------------------------------------------------------------
@@ -293,6 +308,34 @@ app.get('/api/proxmox/templates', async (req, res) => {
   }
 });
 
+// 2a. Delete template from Proxmox
+app.delete('/api/proxmox/templates', async (req, res) => {
+  const { volid } = req.body;
+  if (!volid) {
+    return res.status(400).json({ error: 'Volume ID is required' });
+  }
+  const config = getConfig();
+  const node = config.node_name || 'pve';
+  try {
+    const parts = volid.split(':');
+    if (parts.length < 2) {
+      return res.status(400).json({ error: 'Invalid Volume ID' });
+    }
+    const storage = parts[0];
+    const volume = parts.slice(1).join(':');
+    
+    // DELETE /nodes/{node}/storage/{storage}/content/{volume}
+    const encodedVolume = encodeURIComponent(volume);
+    await proxmoxRequest('DELETE', `/nodes/${node}/storage/${storage}/content/${encodedVolume}`);
+    
+    res.json({ success: true, message: `Template '${volume}' deleted successfully.` });
+  } catch (err) {
+    console.error('Failed to delete template:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 // 3. Fetch list of storage pools
 app.get('/api/proxmox/storages', async (req, res) => {
   const config = getConfig();
@@ -367,8 +410,23 @@ app.get('/api/deployments', async (req, res) => {
   const enriched = await Promise.all(db.deployments.map(async (dep) => {
     if (dep.status === 'active' && config.pm_api_url) {
       try {
-        const node = config.node_name || 'pve';
+        const node = dep.target_node || config.node_name || 'pve';
         const status = await proxmoxRequest('GET', `/nodes/${node}/lxc/${dep.vm_id}/status/current`);
+        
+        // Push metrics history
+        if (!metricsHistory[dep.id]) {
+          metricsHistory[dep.id] = [];
+        }
+        metricsHistory[dep.id].push({
+          cpu: parseFloat((status.cpu * 100).toFixed(1)) || 0,
+          mem: Math.round(status.mem / (1024 * 1024)) || 0,
+          timestamp: Date.now()
+        });
+        
+        if (metricsHistory[dep.id].length > 15) {
+          metricsHistory[dep.id].shift();
+        }
+
         return {
           ...dep,
           proxmox_status: {
@@ -377,13 +435,21 @@ app.get('/api/deployments', async (req, res) => {
             cpu: status.cpu,
             mem: status.mem,
             maxmem: status.maxmem
-          }
+          },
+          history: metricsHistory[dep.id]
         };
       } catch (err) {
-        return { ...dep, proxmox_status: { status: 'offline', error: err.message } };
+        return { 
+          ...dep, 
+          proxmox_status: { status: 'offline', error: err.message },
+          history: metricsHistory[dep.id] || []
+        };
       }
     }
-    return dep;
+    return {
+      ...dep,
+      history: metricsHistory[dep.id] || []
+    };
   }));
 
   res.json(enriched);
@@ -569,10 +635,11 @@ ${deployConfig.custom_script}
   }
 
   // Add Proxmox URLs to config for Terraform main.tf generation
+  const targetNode = deployConfig.target_node || config.node_name || 'pve';
   const fullConfig = {
     ...deployConfig,
     pm_api_url: config.pm_api_url,
-    node_name: config.node_name || 'pve',
+    node_name: targetNode,
     provision_key_pub
   };
 
@@ -590,6 +657,7 @@ ${deployConfig.custom_script}
     memory: deployConfig.memory,
     disk_storage: deployConfig.disk_storage,
     disk_size: deployConfig.disk_size,
+    target_node: targetNode,
     status: 'deploying',
     created_at: new Date().toISOString()
   };
@@ -692,6 +760,135 @@ app.post('/api/deployments/:id/unarchive', (req, res) => {
     res.json({ success: true, message: 'Deployment restored from archive' });
   } else {
     res.status(404).json({ error: 'Deployment not found' });
+  }
+});
+
+// 10. Fetch Proxmox Cluster Nodes
+app.get('/api/proxmox/nodes', async (req, res) => {
+  try {
+    const nodes = await proxmoxRequest('GET', '/nodes');
+    res.json({ source: 'proxmox', nodes: nodes.map(n => ({ name: n.node, status: n.status, cpu: n.cpu, mem: n.mem, maxmem: n.maxmem })) });
+  } catch (err) {
+    console.error('Proxmox nodes fetch failed:', err.message);
+    res.json({ source: 'mock', nodes: [{ name: 'pve', status: 'online', cpu: 0.12, mem: 4096000000, maxmem: 16000000000 }] });
+  }
+});
+
+// 11. LXC Power Status Actions
+app.post('/api/proxmox/lxc/:node/:vmid/status/:action', async (req, res) => {
+  const { node, vmid, action } = req.params;
+  if (!['start', 'shutdown', 'stop', 'reboot'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid action. Supported: start, shutdown, stop, reboot' });
+  }
+  try {
+    await proxmoxRequest('POST', `/nodes/${node}/lxc/${vmid}/status/${action}`);
+    res.json({ success: true, message: `Container ${vmid} status change to '${action}' submitted.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 12. List Downloadable Templates
+app.get('/api/proxmox/aplinfo/:node', async (req, res) => {
+  const { node } = req.params;
+  try {
+    const list = await proxmoxRequest('GET', `/nodes/${node}/aplinfo`);
+    res.json({ source: 'proxmox', templates: list.filter(item => item.type === 'vztmpl' || item.type === 'lxc' || item.template) });
+  } catch (err) {
+    res.json({
+      source: 'mock',
+      templates: [
+        { template: 'ubuntu-22.04-standard_22.04-1_amd64.tar.zst', package: 'system/ubuntu-22.04', headline: 'Ubuntu 22.04 Jammy Jellyfish (Standard)', version: '22.04-1', section: 'system' },
+        { template: 'alpine-3.19-default_20231218_amd64.tar.xz', package: 'system/alpine-3.19', headline: 'Alpine Linux 3.19 (Default)', version: '3.19', section: 'system' },
+        { template: 'debian-12-standard_12.2-1_amd64.tar.zst', package: 'system/debian-12', headline: 'Debian 12 Bookworm (Standard)', version: '12.2-1', section: 'system' }
+      ]
+    });
+  }
+});
+
+// 13. Download Template Task
+app.post('/api/proxmox/apldownload/:node', async (req, res) => {
+  const { node } = req.params;
+  const { template, storage } = req.body;
+  try {
+    const upid = await proxmoxRequest('POST', `/nodes/${node}/aplinfo`, {
+      template,
+      storage: storage || 'local'
+    });
+    res.json({ success: true, message: 'Template download task started.', upid });
+  } catch (err) {
+    console.error('API download failed, trying local CLI fallback:', err?.message || err);
+    try {
+      const { exec } = require('child_process');
+      const targetStorage = storage || 'local';
+      const cmd = `pveam download ${targetStorage} ${template}`;
+      exec(cmd, (execErr, stdout, stderr) => {
+        if (execErr) {
+          console.error(`pveam download fallback failed: ${execErr.message}`);
+        } else {
+          console.log(`pveam download fallback completed: ${stdout}`);
+        }
+      });
+      res.json({ success: true, message: 'Template download started via CLI fallback in the background.' });
+    } catch (fallbackErr) {
+      res.status(500).json({ success: false, error: `${err?.message || err || 'Unknown error'} (CLI fallback failed: ${fallbackErr?.message || fallbackErr || 'Unknown error'})` });
+    }
+  }
+});
+
+
+// 14. List LXC Container Snapshots
+app.get('/api/proxmox/lxc/:node/:vmid/snapshots', async (req, res) => {
+  const { node, vmid } = req.params;
+  try {
+    const list = await proxmoxRequest('GET', `/nodes/${node}/lxc/${vmid}/snapshot`);
+    res.json({ source: 'proxmox', snapshots: list });
+  } catch (err) {
+    res.json({
+      source: 'mock',
+      snapshots: [
+        { name: 'current', comment: 'You are here', parent: 'clean-install' },
+        { name: 'clean-install', comment: 'Base system setup completed', parent: '', snaptime: Math.floor(Date.now()/1000) - 3600 }
+      ]
+    });
+  }
+});
+
+// 15. Create Container Snapshot
+app.post('/api/proxmox/lxc/:node/:vmid/snapshots', async (req, res) => {
+  const { node, vmid } = req.params;
+  const { snapname, description } = req.body;
+  if (!snapname) return res.status(400).json({ error: 'Snapshot name is required.' });
+  try {
+    const upid = await proxmoxRequest('POST', `/nodes/${node}/lxc/${vmid}/snapshot`, {
+      snapname,
+      comment: description || ''
+    });
+    res.json({ success: true, message: `Snapshot '${snapname}' creation started.`, upid });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 16. Rollback Container Snapshot
+app.post('/api/proxmox/lxc/:node/:vmid/snapshots/:snapname/rollback', async (req, res) => {
+  const { node, vmid, snapname } = req.params;
+  try {
+    const upid = await proxmoxRequest('POST', `/nodes/${node}/lxc/${vmid}/snapshot/${snapname}/rollback`);
+    res.json({ success: true, message: `Rollback to snapshot '${snapname}' started.`, upid });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 17. Delete Container Snapshot
+app.delete('/api/proxmox/lxc/:node/:vmid/snapshots/:snapname', async (req, res) => {
+  const { node, vmid, snapname } = req.params;
+  try {
+    const upid = await proxmoxRequest('DELETE', `/nodes/${node}/lxc/${vmid}/snapshot/${snapname}`);
+    res.json({ success: true, message: `Snapshot '${snapname}' deletion started.`, upid });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -55,7 +55,132 @@ const Icons = {
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000/api`;
 
+// Custom Searchable Dropdown
+const SearchableSelect = ({ options, value, onChange, placeholder, disabled }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = React.useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filtered = options.filter(opt => 
+    (opt.label || '').toLowerCase().includes(search.toLowerCase()) ||
+    (opt.value || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectedOpt = options.find(opt => opt.value === value);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+      <div
+        className="form-control"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: 'rgba(255, 255, 255, 0.03)',
+          borderColor: 'var(--glass-border)',
+          opacity: disabled ? 0.6 : 1,
+          userSelect: 'none',
+          padding: '0.6rem 1.0rem',
+          height: 'auto',
+          minHeight: '42px'
+        }}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+      >
+        <span style={{ color: selectedOpt ? '#fff' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selectedOpt ? selectedOpt.label : placeholder}
+        </span>
+        <span style={{ transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'none', color: 'var(--text-muted)', fontSize: '0.8rem' }}>▼</span>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 5px)',
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+          background: '#0e121a',
+          border: '1px solid var(--glass-border)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(15px)',
+          padding: '0.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          maxHeight: '300px',
+          overflow: 'hidden'
+        }}>
+          <input
+            type="text"
+            placeholder="Type to search..."
+            className="form-control"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              padding: '0.4rem 0.75rem',
+              fontSize: '0.85rem',
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              margin: 0
+            }}
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '0.75rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center' }}>
+                No matches found
+              </div>
+            ) : (
+              filtered.map(opt => (
+                <div
+                  key={opt.value}
+                  style={{
+                    padding: '0.6rem 0.8rem',
+                    fontSize: '0.85rem',
+                    color: opt.value === value ? 'var(--accent-primary)' : '#fff',
+                    background: opt.value === value ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                    cursor: 'pointer',
+                    borderRadius: 'var(--radius-sm)',
+                    transition: 'background 0.2s',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: '1.4'
+                  }}
+
+                  className="table-row-hover"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChange(opt.value);
+                    setIsOpen(false);
+                    setSearch('');
+                  }}
+                >
+                  {opt.label}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 function App() {
+
   const [activeTab, setActiveTab] = useState('deploy');
   const [config, setConfig] = useState({
     pm_api_url: '',
@@ -81,12 +206,23 @@ function App() {
   const [bridges, setBridges] = useState([]);
   const [allStorages, setAllStorages] = useState([]);
   const [allBridges, setAllBridges] = useState([]);
+  const [nodes, setNodes] = useState([]);
   const [deployments, setDeployments] = useState([]);
+  const [aplinfoTemplates, setAplinfoTemplates] = useState([]);
+  const [snapshots, setSnapshots] = useState([]);
+
+  const [selectedSnapshotDep, setSelectedSnapshotDep] = useState(null);
+  const [newSnapshotName, setNewSnapshotName] = useState('');
+  const [newSnapshotDesc, setNewSnapshotDesc] = useState('');
   
   const [isTemplatesLoading, setIsTemplatesLoading] = useState(false);
   const [isAllResourcesLoading, setIsAllResourcesLoading] = useState(false);
   const [isStoragesLoading, setIsStoragesLoading] = useState(false);
   const [isBridgesLoading, setIsBridgesLoading] = useState(false);
+  const [isNodesLoading, setIsNodesLoading] = useState(false);
+  const [isAplinfoLoading, setIsAplinfoLoading] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [isSnapshotsLoading, setIsSnapshotsLoading] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [isTestingConfig, setIsTestingConfig] = useState(false);
   
@@ -97,7 +233,11 @@ function App() {
   const [logContent, setLogContent] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [downloadSearchTerm, setDownloadSearchTerm] = useState('');
+  const [selectedDownloadTemplate, setSelectedDownloadTemplate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+
+
   const [enableCustomScript, setEnableCustomScript] = useState(false);
 
   // Reset page when filtering changes
@@ -112,6 +252,7 @@ function App() {
     password: '',
     ssh_keys: '',
     template_file_id: '',
+    target_node: '',
     cpu_cores: 1,
     memory: 1024,
     swap: 512,
@@ -165,17 +306,24 @@ function App() {
   const loadAllResourcesForExclusions = () => {
     if (!config.pm_api_url) return;
     setIsAllResourcesLoading(true);
+    setIsAplinfoLoading(true);
     
     const fetchStorages = fetch(`${API_BASE}/proxmox/storages?all=true`).then(res => res.json());
     const fetchBridges = fetch(`${API_BASE}/proxmox/bridges?all=true`).then(res => res.json());
+    const node = config.node_name || 'pve';
+    const fetchAplinfo = fetch(`${API_BASE}/proxmox/aplinfo/${node}`).then(res => res.json());
 
-    Promise.all([fetchStorages, fetchBridges])
-      .then(([storagesData, bridgesData]) => {
+    Promise.all([fetchStorages, fetchBridges, fetchAplinfo])
+      .then(([storagesData, bridgesData, aplinfoData]) => {
         setAllStorages(storagesData.storages || []);
         setAllBridges(bridgesData.bridges || []);
+        setAplinfoTemplates(aplinfoData.templates || []);
       })
       .catch(() => {})
-      .finally(() => setIsAllResourcesLoading(false));
+      .finally(() => {
+        setIsAllResourcesLoading(false);
+        setIsAplinfoLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -225,6 +373,18 @@ function App() {
       })
       .catch(() => showNotification('Error fetching network bridges', 'error'))
       .finally(() => setIsBridgesLoading(false));
+
+    setIsNodesLoading(true);
+    fetch(`${API_BASE}/proxmox/nodes`)
+      .then(res => res.json())
+      .then(data => {
+        setNodes(data.nodes || []);
+        if (data.nodes && data.nodes.length > 0 && !formData.target_node) {
+          setFormData(prev => ({ ...prev, target_node: data.nodes[0].name }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsNodesLoading(false));
 
     fetch(`${API_BASE}/proxmox/next-id`)
       .then(res => res.json())
@@ -284,9 +444,134 @@ function App() {
         setStorages([]);
         setBridges([]);
         setAllStorages([]);
-        setAllBridges([]);
       })
       .catch(() => showNotification('Failed to clear settings', 'error'));
+  };
+
+  // Handle settings power actions (start/stop/reboot)
+  const handlePowerAction = (dep, action) => {
+    const node = dep.target_node || config.node_name || 'pve';
+    fetch(`${API_BASE}/proxmox/lxc/${node}/${dep.vm_id}/status/${action}`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          showNotification(data.message);
+          loadDeployments();
+        } else {
+          showNotification(`Power action failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+      })
+      .catch((err) => showNotification(`Error executing action: ${err.message}`, 'error'));
+  };
+
+  // Open Snapshots modal
+  const openSnapshotsModal = (dep) => {
+    setSelectedSnapshotDep(dep);
+    setNewSnapshotName('');
+    setNewSnapshotDesc('');
+    loadSnapshots(dep);
+  };
+
+  // Load container snapshots
+  const loadSnapshots = (dep) => {
+    setIsSnapshotsLoading(true);
+    const node = dep.target_node || config.node_name || 'pve';
+    fetch(`${API_BASE}/proxmox/lxc/${node}/${dep.vm_id}/snapshots`)
+      .then(res => res.json())
+      .then(data => {
+        setSnapshots(data.snapshots || []);
+      })
+      .catch(() => showNotification('Failed to fetch snapshots', 'error'))
+      .finally(() => setIsSnapshotsLoading(false));
+  };
+
+  // Create Snapshot
+  const handleCreateSnapshot = (e) => {
+    e.preventDefault();
+    if (!newSnapshotName.trim()) return;
+    const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
+    fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snapname: newSnapshotName, description: newSnapshotDesc })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          showNotification(data.message);
+          setNewSnapshotName('');
+          setNewSnapshotDesc('');
+          loadSnapshots(selectedSnapshotDep);
+        } else {
+          showNotification(data.error || 'Failed to create snapshot', 'error');
+        }
+      })
+      .catch(() => showNotification('Error creating snapshot', 'error'));
+  };
+
+  // Rollback Snapshot
+  const handleRollbackSnapshot = (snapname) => {
+    if (!window.confirm(`Are you sure you want to rollback to snapshot '${snapname}'? This will revert the container state.`)) {
+      return;
+    }
+    const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
+    fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots/${snapname}/rollback`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          showNotification(data.message);
+          loadSnapshots(selectedSnapshotDep);
+        } else {
+          showNotification(data.error || 'Failed to rollback', 'error');
+        }
+      })
+      .catch(() => showNotification('Error rolling back snapshot', 'error'));
+  };
+
+  // Delete Snapshot
+  const handleDeleteSnapshot = (snapname) => {
+    if (!window.confirm(`Are you sure you want to delete snapshot '${snapname}'?`)) {
+      return;
+    }
+    const node = selectedSnapshotDep.target_node || config.node_name || 'pve';
+    fetch(`${API_BASE}/proxmox/lxc/${node}/${selectedSnapshotDep.vm_id}/snapshots/${snapname}`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          showNotification(data.message);
+          loadSnapshots(selectedSnapshotDep);
+        } else {
+          showNotification(data.error || 'Failed to delete snapshot', 'error');
+        }
+      })
+      .catch(() => showNotification('Error deleting snapshot', 'error'));
+  };
+
+  // Draw lightweight SVG Sparkline
+  const drawSparkline = (points, key, maxVal = 100) => {
+    if (!points || points.length < 2) return null;
+    const width = 80;
+    const height = 16;
+    const padding = 1;
+    const xStep = (width - padding * 2) / (points.length - 1);
+    const svgPoints = points.map((p, idx) => {
+      const x = padding + idx * xStep;
+      const val = p[key] || 0;
+      const clampedVal = Math.min(val, maxVal);
+      const y = height - padding - (clampedVal / maxVal) * (height - padding * 2);
+      return `${x},${y}`;
+    }).join(' ');
+
+    return (
+      <svg width={width} height={height} style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: '0.5rem' }}>
+        <polyline
+          fill="none"
+          stroke="var(--accent-primary)"
+          strokeWidth="1.25"
+          points={svgPoints}
+        />
+      </svg>
+    );
   };
 
   // Test configuration endpoint
@@ -408,6 +693,29 @@ function App() {
       })
       .catch(() => showNotification('Failed to restore deployment', 'error'));
   };
+
+  // Delete downloaded container template
+  const handleDeleteTemplate = (volid) => {
+    if (!window.confirm(`Are you sure you want to permanently delete the template file '${volid.split('/').pop()}' from Proxmox storage?`)) {
+      return;
+    }
+    fetch(`${API_BASE}/proxmox/templates`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volid })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          showNotification(data.message);
+          loadProxmoxData(); // Reload templates list
+        } else {
+          showNotification(data.error || 'Failed to delete template', 'error');
+        }
+      })
+      .catch(() => showNotification('Error deleting template', 'error'));
+  };
+
 
   // View logs helper
   const viewLogs = (id) => {
@@ -566,21 +874,45 @@ function App() {
               </div>
             </div>
 
-            {/* Templates Selector */}
-            <div className="form-group" style={{ marginBottom: '2rem' }}>
-              <label className="form-label">Container Template (VZTmpl)</label>
-              {isTemplatesLoading ? (
-                <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching templates from Proxmox...</div>
-              ) : (
-                <select className="form-control" value={formData.template_file_id} onChange={(e) => setFormData({ ...formData, template_file_id: e.target.value })} required>
-                  <option value="" disabled>-- Select Template --</option>
-                  {templates.map(tmpl => (
-                    <option key={tmpl.volid} value={tmpl.volid}>
-                      {tmpl.volid.split('/').pop()} ({formatBytes(tmpl.size)})
-                    </option>
-                  ))}
-                </select>
-              )}
+            {/* Node & Template Selector */}
+            <div className="form-row" style={{ marginBottom: '2rem' }}>
+              <div className="form-group">
+                <label className="form-label">Target Cluster Node</label>
+                {isNodesLoading ? (
+                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching nodes...</div>
+                ) : (
+                  <select className="form-control" value={formData.target_node} onChange={(e) => setFormData({ ...formData, target_node: e.target.value })} required>
+                    <option value="" disabled>-- Select Target Node --</option>
+                    {nodes.map(node => {
+                      const cpuText = node.cpu !== undefined && !isNaN(node.cpu) ? `CPU: ${(node.cpu * 100).toFixed(0)}%` : '';
+                      const memText = node.mem !== undefined && node.maxmem !== undefined && !isNaN(node.mem) && !isNaN(node.maxmem) 
+                        ? `RAM: ${(node.mem / (1024 ** 3)).toFixed(1)}GB / ${(node.maxmem / (1024 ** 3)).toFixed(1)}GB` 
+                        : '';
+                      const statusDetails = [cpuText, memText].filter(Boolean).join(', ');
+                      return (
+                        <option key={node.name} value={node.name}>
+                          {node.name} ({node.status === 'online' ? `Online${statusDetails ? `, ${statusDetails}` : ''}` : 'Offline'})
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Container Template (VZTmpl)</label>
+                {isTemplatesLoading ? (
+                  <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching templates from Proxmox...</div>
+                ) : (
+                  <select className="form-control" value={formData.template_file_id} onChange={(e) => setFormData({ ...formData, template_file_id: e.target.value })} required>
+                    <option value="" disabled>-- Select Template --</option>
+                    {templates.map(tmpl => (
+                      <option key={tmpl.volid} value={tmpl.volid}>
+                        {tmpl.volid.split('/').pop()} ({formatBytes(tmpl.size)})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
 
             {/* Row 2: Hardware Settings */}
@@ -923,19 +1255,52 @@ function App() {
                                   {dep.proxmox_status.status}
                                 </div>
                               )}
+                              {dep.status === 'active' && dep.proxmox_status?.status && (
+                                <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.4rem' }}>
+                                  {isRunning ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        title="Shutdown Container"
+                                        style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', color: 'var(--accent-warning)', borderRadius: '3px', cursor: 'pointer' }}
+                                        onClick={() => handlePowerAction(dep, 'shutdown')}
+                                      >
+                                        Stop
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Reboot Container"
+                                        style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)', color: 'var(--accent-primary)', borderRadius: '3px', cursor: 'pointer' }}
+                                        onClick={() => handlePowerAction(dep, 'reboot')}
+                                      >
+                                        Reboot
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      title="Start Container"
+                                      style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', color: 'var(--accent-success)', borderRadius: '3px', cursor: 'pointer' }}
+                                      onClick={() => handlePowerAction(dep, 'start')}
+                                    >
+                                      Start
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </td>
 
                             {/* Real-time resource usage from Proxmox */}
-                            <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.8rem', width: '180px' }}>
+                            <td style={{ padding: '1.25rem 0.75rem', fontSize: '0.8rem', width: '240px' }}>
                               {isRunning ? (
                                 <div>
-                                  <div style={{ marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>CPU:</span>
-                                    <strong style={{ color: '#fff' }}>{(dep.proxmox_status.cpu * 100).toFixed(1)}%</strong>
+                                  <div style={{ marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>CPU: <strong style={{ color: '#fff' }}>{(dep.proxmox_status.cpu * 100).toFixed(1)}%</strong></span>
+                                    {drawSparkline(dep.history, 'cpu', 100)}
                                   </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>RAM:</span>
-                                    <strong style={{ color: '#fff' }}>{Math.round(dep.proxmox_status.mem / (1024 * 1024))} MB</strong>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>RAM: <strong style={{ color: '#fff' }}>{Math.round(dep.proxmox_status.mem / (1024 * 1024))} MB</strong></span>
+                                    {drawSparkline(dep.history, 'mem', dep.memory || 1024)}
                                   </div>
                                 </div>
                               ) : (
@@ -945,7 +1310,12 @@ function App() {
 
                             {/* Actions */}
                             <td style={{ padding: '1.25rem 0.75rem', textAlign: 'right' }}>
-                              <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                              <div style={{ display: 'inline-flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                {dep.status === 'active' && (
+                                  <button className="btn btn-secondary" title="Manage Snapshots" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => openSnapshotsModal(dep)}>
+                                    📸 Snapshots
+                                  </button>
+                                )}
                                 <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => viewLogs(dep.id)}>
                                   <Icons.ExternalLink /> logs
                                 </button>
@@ -1038,6 +1408,92 @@ function App() {
                   }}>
                     {logContent}
                   </pre>
+                </div>
+              </div>
+            )}
+
+            {/* Dynamic snapshots manager overlay */}
+            {selectedSnapshotDep && (
+              <div style={{
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.85)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 99999,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2rem'
+              }}>
+                <div className="glass-panel" style={{ width: '100%', maxWidth: '700px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h3 style={{ color: '#fff', margin: 0 }}>Snapshots: {selectedSnapshotDep.hostname}</h3>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>CT ID: {selectedSnapshotDep.vm_id}</span>
+                    </div>
+                    <button className="btn btn-secondary" style={{ padding: '0.4rem 1rem' }} onClick={() => setSelectedSnapshotDep(null)}>Close</button>
+                  </div>
+                  
+                  <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    
+                    {/* Create Snapshot Form */}
+                    <form onSubmit={handleCreateSnapshot} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(255,255,255,0.015)' }}>
+                      <h4 style={{ color: 'var(--accent-primary)', margin: 0 }}>Create New Snapshot</h4>
+                      <div className="form-row">
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.75rem' }}>Snapshot Name</label>
+                          <input type="text" required placeholder="e.g. pre_upgrade" className="form-control" value={newSnapshotName} onChange={(e) => setNewSnapshotName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))} style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }} />
+                        </div>
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.75rem' }}>Description</label>
+                          <input type="text" placeholder="e.g. before apt upgrade" className="form-control" value={newSnapshotDesc} onChange={(e) => setNewSnapshotDesc(e.target.value)} style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }} />
+                        </div>
+                      </div>
+                      <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', padding: '0.4rem 1.25rem', fontSize: '0.85rem' }}>
+                        Create Snapshot
+                      </button>
+                    </form>
+
+                    {/* Snapshots List */}
+                    <div>
+                      <h4 style={{ color: '#fff', marginBottom: '0.75rem' }}>Snapshot History</h4>
+                      {isSnapshotsLoading ? (
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading snapshots...</div>
+                      ) : snapshots.length === 0 ? (
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '1.5rem 0' }}>No snapshots exist for this container.</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          {snapshots.map(snap => {
+                            const isCurrent = snap.name === 'current';
+                            return (
+                              <div key={snap.name} className="glass-card" style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isCurrent ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255,255,255,0.01)', borderColor: isCurrent ? 'var(--accent-primary)' : 'var(--glass-border)' }}>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <strong style={{ color: '#fff', fontSize: '0.95rem' }}>{snap.name}</strong>
+                                    {isCurrent && <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '3px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 600 }}>Active</span>}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                    {snap.comment || 'No description'} 
+                                    {snap.snaptime && ` • ${new Date(snap.snaptime * 1000).toLocaleString()}`}
+                                  </div>
+                                </div>
+                                {!isCurrent && (
+                                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                    <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }} onClick={() => handleRollbackSnapshot(snap.name)}>
+                                      Rollback
+                                    </button>
+                                    <button className="btn btn-danger" style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }} onClick={() => handleDeleteSnapshot(snap.name)}>
+                                      Delete
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1245,6 +1701,102 @@ function App() {
                   <label className="form-label">Default Search Domain</label>
                   <input type="text" placeholder="e.g. local.lan" className="form-control" value={config.default_dns_domain || ''} onChange={(e) => setConfig({ ...config, default_dns_domain: e.target.value })} />
                 </div>
+              </div>
+
+              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />
+
+              {/* Section 5: Template Downloader */}
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '1.25rem' }}>Download Container Templates</h3>
+              <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.015)', marginBottom: '2rem', position: 'relative', zIndex: 10 }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '1rem' }}>
+                  Download official container OS templates from Proxmox repositories directly to your template storage pool.
+                </span>
+                
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>OS Template Catalog</label>
+                    <SearchableSelect
+                      options={aplinfoTemplates.map(item => ({
+                        value: item.template,
+                        label: `[${item.section}] ${item.headline || item.template} (v${item.version})`
+                      }))}
+                      value={selectedDownloadTemplate}
+                      onChange={setSelectedDownloadTemplate}
+                      placeholder="-- Choose a template to download --"
+                      disabled={isDownloadingTemplate || !config.pm_api_url}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isDownloadingTemplate || !config.pm_api_url}
+                    className="btn btn-primary"
+                    style={{ height: '42px', padding: '0 1.5rem', flexShrink: 0 }}
+                    onClick={() => {
+                      const templateVal = selectedDownloadTemplate;
+                      const storageVal = config.template_storage || 'local';
+                      if (!templateVal) {
+                        showNotification('Please select a template to download first.', 'error');
+                        return;
+                      }
+                      setIsDownloadingTemplate(true);
+
+                      const node = config.node_name || 'pve';
+                      fetch(`${API_BASE}/proxmox/apldownload/${node}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ template: templateVal, storage: storageVal })
+                      })
+
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            showNotification('Template download task initiated on Proxmox cluster!');
+                            loadProxmoxData(); // Reload templates list
+                          } else {
+                            showNotification(data.error || 'Failed to start download task.', 'error');
+                          }
+                        })
+                        .catch(() => showNotification('Error initiating template download.', 'error'))
+                        .finally(() => setIsDownloadingTemplate(false));
+                    }}
+                  >
+                    {isDownloadingTemplate ? 'Downloading...' : 'Download Template'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 5b: Downloaded Templates List */}
+              <h4 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Downloaded Container Templates</h4>
+              <div className="glass-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--glass-border)' }}>
+                {isTemplatesLoading ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading templates...</div>
+                ) : templates.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>No container templates downloaded yet on storage pool. Use catalog above to download one.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {templates.map(tmpl => {
+                      const name = tmpl.volid.split('/').pop();
+                      return (
+                        <div key={tmpl.volid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.03)' }}>
+                          <div>
+                            <div style={{ fontWeight: 500, color: '#fff', fontSize: '0.9rem' }}>{name}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Storage: {tmpl.volid.split(':')[0]} • Size: {formatBytes(tmpl.size)}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            title="Delete template from storage"
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                            onClick={() => handleDeleteTemplate(tmpl.volid)}
+                          >
+                            <Icons.Trash /> Delete
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '2rem 0' }} />

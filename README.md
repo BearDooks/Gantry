@@ -53,8 +53,8 @@ Because the backend runs `terraform init` independently for every container depl
    #### Method A: Proxmox Host CLI (Recommended)
    Run these commands inside your main Proxmox VE node shell:
    ```bash
-   # 1. Create a custom role with required permissions for LXC deployment
-   pveum roleadd TerraformLXC -privs "VM.Allocate VM.Config.CPU VM.Config.Memory VM.Config.Disk VM.Config.Network VM.Config.Options VM.Audit VM.PowerMgmt Datastore.AllocateSpace Datastore.Audit SDN.Use Sys.Config"
+   # 1. Create a custom role with required permissions for LXC deployment, snapshots, and downloads
+   pveum roleadd TerraformLXC -privs "VM.Allocate VM.Config.CPU VM.Config.Memory VM.Config.Disk VM.Config.Network VM.Config.Options VM.Audit VM.PowerMgmt Datastore.AllocateSpace Datastore.Audit Datastore.AllocateTemplate Datastore.Allocate SDN.Use Sys.Config Sys.Audit Sys.Modify VM.Snapshot VM.Snapshot.Rollback"
 
    # 2. Create the deployer user under the PVE realm
    pveum useradd terraform@pve -password YourSecurePassword
@@ -70,7 +70,7 @@ Because the backend runs `terraform init` independently for every container depl
    #### Method B: Proxmox Web UI
    1. **Create Role**: Go to **Datacenter** -> **Permissions** -> **Roles** and click **Create**.
       - Name: `TerraformLXC`
-      - Select privileges: `VM.Allocate`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network`, `VM.Config.Options`, `VM.Audit`, `VM.PowerMgmt`, `Datastore.AllocateSpace`, `Datastore.Audit`, `SDN.Use`, `Sys.Config`.
+      - Select privileges: `VM.Allocate`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network`, `VM.Config.Options`, `VM.Audit`, `VM.PowerMgmt`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.AllocateTemplate`, `Datastore.Allocate`, `SDN.Use`, `Sys.Config`, `Sys.Audit`, `Sys.Modify`, `VM.Snapshot`, `VM.Snapshot.Rollback`.
    2. **Create User**: Go to **Datacenter** -> **Permissions** -> **Users** and click **Add**.
       - User name: `terraform`, Realm: `pve`, set a password.
    3. **Assign Permissions**: Go to **Datacenter** -> **Permissions** -> click **Add** -> **User Permission**.
