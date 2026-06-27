@@ -237,6 +237,14 @@ function App() {
   const [newSnapshotName, setNewSnapshotName] = useState('');
   const [newSnapshotDesc, setNewSnapshotDesc] = useState('');
   
+  const [selectedDrawerDep, setSelectedDrawerDep] = useState(null);
+  const [selectedPipelineDep, setSelectedPipelineDep] = useState(null);
+  const [deployingLogs, setDeployingLogs] = useState({});
+  const [selectedTheme, setSelectedTheme] = useState(() => localStorage.getItem('gantry-theme') || 'space');
+  const [blurIntensity, setBlurIntensity] = useState(() => parseInt(localStorage.getItem('gantry-blur')) || 16);
+  const [showClusterTotals, setShowClusterTotals] = useState(false);
+  const [clusterAllocatedVCPUs, setClusterAllocatedVCPUs] = useState(0);
+  
   const [isTemplatesLoading, setIsTemplatesLoading] = useState(false);
   const [isAllResourcesLoading, setIsAllResourcesLoading] = useState(false);
   const [isStoragesLoading, setIsStoragesLoading] = useState(false);
@@ -325,6 +333,129 @@ function App() {
       .catch(() => showNotification('Could not load configuration', 'error'));
   }, []);
 
+  // Theme & blur dynamic application
+  useEffect(() => {
+    localStorage.setItem('gantry-theme', selectedTheme);
+    localStorage.setItem('gantry-blur', blurIntensity);
+    
+    const root = document.documentElement;
+    root.style.setProperty('--glass-blur', `${blurIntensity}px`);
+    
+    if (selectedTheme === 'cyberpunk') {
+      root.style.setProperty('--bg-primary', '#020205');
+      root.style.setProperty('--bg-glow-1', 'radial-gradient(circle at 10% 20%, rgba(244, 63, 94, 0.15) 0%, transparent 60%)');
+      root.style.setProperty('--bg-glow-2', 'radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.12) 0%, transparent 60%)');
+      root.style.setProperty('--accent-primary', '#f43f5e'); // Rose
+      root.style.setProperty('--accent-primary-hover', '#e11d48');
+    } else if (selectedTheme === 'violet') {
+      root.style.setProperty('--bg-primary', '#0b0816');
+      root.style.setProperty('--bg-glow-1', 'radial-gradient(circle at 20% 30%, rgba(139, 92, 246, 0.15) 0%, transparent 60%)');
+      root.style.setProperty('--bg-glow-2', 'radial-gradient(circle at 80% 70%, rgba(236, 72, 153, 0.1) 0%, transparent 60%)');
+      root.style.setProperty('--accent-primary', '#8b5cf6'); // Violet
+      root.style.setProperty('--accent-primary-hover', '#7c3aed');
+    } else {
+      // Default 'space'
+      root.style.setProperty('--bg-primary', '#080a10');
+      root.style.setProperty('--bg-glow-1', 'radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 60%)');
+      root.style.setProperty('--bg-glow-2', 'radial-gradient(circle at 90% 80%, rgba(236, 72, 153, 0.08) 0%, transparent 60%)');
+      root.style.setProperty('--accent-primary', '#6366f1'); // Indigo
+      root.style.setProperty('--accent-primary-hover', '#4f46e5');
+    }
+  }, [selectedTheme, blurIntensity]);
+
+  // Log scanning helper for active deployments
+  const parseLogsToPipeline = (logText) => {
+    const steps = [
+      { id: 1, name: 'Initializing Workspace', status: 'pending' },
+      { id: 2, name: 'Checking OS Template', status: 'pending' },
+      { id: 3, name: 'Allocating System Resources', status: 'pending' },
+      { id: 4, name: 'Configuring Network Interface', status: 'pending' },
+      { id: 5, name: 'Running Post-Install Provisioning', status: 'pending' }
+    ];
+
+    if (!logText) return steps;
+
+    // Step 1: Initializing
+    if (logText.includes('terraform init') || logText.includes('Initializing')) {
+      steps[0].status = 'active';
+    }
+    if (logText.includes('Successfully initialized') || logText.includes('Initializing provider plugins')) {
+      steps[0].status = 'completed';
+      steps[1].status = 'active';
+    }
+
+    // Step 2: OS Template
+    if (logText.includes('template') || logText.includes('vztmpl')) {
+      steps[1].status = 'active';
+    }
+    if (logText.includes('proxmox_lxc') || logText.includes('Creating...')) {
+      steps[1].status = 'completed';
+      steps[2].status = 'active';
+    }
+
+    // Step 3: Resources
+    if (logText.includes('cores') || logText.includes('memory') || logText.includes('rootfs')) {
+      steps[2].status = 'active';
+    }
+    if (logText.includes('network') || logText.includes('interfaces') || logText.includes('ip=')) {
+      steps[2].status = 'completed';
+      steps[3].status = 'active';
+    }
+
+    // Step 4: Network
+    if (logText.includes('bridge') || logText.includes('gw=')) {
+      steps[3].status = 'active';
+    }
+    if (logText.includes('provision') || logText.includes('SSH') || logText.includes('provisioner')) {
+      steps[3].status = 'completed';
+      steps[4].status = 'active';
+    }
+
+    // Step 5: Provisioning
+    if (logText.includes('Starting Container Provisioning') || logText.includes('Executing')) {
+      steps[4].status = 'active';
+    }
+
+    // Check completion or failure
+    if (logText.includes('Apply complete!') || logText.includes('exit code: 0')) {
+      steps.forEach(s => s.status = 'completed');
+    } else if (logText.includes('exit code:') && !logText.includes('exit code: 0')) {
+      const activeStep = steps.find(s => s.status === 'active');
+      if (activeStep) {
+        activeStep.status = 'failed';
+      }
+    }
+
+    return steps;
+  };
+
+  // Poll logs for active deploying containers
+  useEffect(() => {
+    const deployingDeps = deployments.filter(d => d.status === 'deploying');
+    if (deployingDeps.length === 0) return;
+
+    const pollLogs = () => {
+      deployingDeps.forEach(dep => {
+        fetch(`${API_BASE}/deployments/${dep.id}/log`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.log) {
+              const parsed = parseLogsToPipeline(data.log);
+              setDeployingLogs(prev => ({
+                ...prev,
+                [dep.id]: parsed
+              }));
+            }
+          })
+          .catch(() => {});
+      });
+    };
+
+    pollLogs();
+    const interval = setInterval(pollLogs, 3000);
+    return () => clearInterval(interval);
+  }, [deployments]);
+
   const loadAllResourcesForExclusions = () => {
     if (!config.pm_api_url) return;
     setIsAllResourcesLoading(true);
@@ -401,6 +532,7 @@ function App() {
       .then(res => res.json())
       .then(data => {
         setNodes(data.nodes || []);
+        setClusterAllocatedVCPUs(data.total_allocated_vcpus || 0);
         if (data.nodes && data.nodes.length > 0 && !formData.target_node) {
           setFormData(prev => ({ ...prev, target_node: data.nodes[0].name }));
         }
@@ -880,6 +1012,28 @@ function App() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const totalCPU = deployments.reduce((acc, dep) => acc + (dep.status === 'active' ? dep.cpu_cores || 0 : 0), 0);
+  const totalRAM = deployments.reduce((acc, dep) => acc + (dep.status === 'active' ? dep.memory || 0 : 0), 0);
+  const totalDisk = deployments.reduce((acc, dep) => acc + (dep.status === 'active' ? dep.disk_size || 0 : 0), 0);
+
+  // Dynamic cluster-wide capacity calculations
+  const clusterCPU = nodes.reduce((acc, n) => acc + (n.status === 'online' ? n.maxcpu || 0 : 0), 0) || 64;
+  const clusterMemBytes = nodes.reduce((acc, n) => acc + (n.status === 'online' ? n.maxmem || 0 : 0), 0) || (32 * 1024 * 1024 * 1024);
+  const clusterMemGB = Math.round(clusterMemBytes / (1024 * 1024 * 1024)) || 32;
+  const clusterDiskGB = storages.reduce((acc, s) => acc + (s.active ? (s.total || 0) : 0), 0) / (1024 * 1024 * 1024) || 500;
+  const clusterDiskGBRounded = Math.round(clusterDiskGB) || 500;
+
+  // Real-time Physical Cluster Consumption
+  const physicalCPUUsed = nodes.reduce((acc, n) => acc + (n.status === 'online' ? (n.cpu || 0) * (n.maxcpu || 0) : 0), 0);
+  const physicalMemBytesUsed = nodes.reduce((acc, n) => acc + (n.status === 'online' ? (n.mem || 0) : 0), 0);
+  const physicalMemMBUsed = Math.round(physicalMemBytesUsed / (1024 * 1024));
+  const physicalDiskBytesUsed = storages.reduce((acc, s) => acc + (s.active ? (s.used || 0) : 0), 0);
+  const physicalDiskGBUsed = Math.round(physicalDiskBytesUsed / (1024 * 1024 * 1024));
+
+  const displayCPU = showClusterTotals ? clusterAllocatedVCPUs : totalCPU;
+  const displayRAM = showClusterTotals ? physicalMemMBUsed : totalRAM;
+  const displayDisk = showClusterTotals ? physicalDiskGBUsed : totalDisk;
+
   const filteredDeployments = deployments
     .filter(d => showArchived ? d.archived : !d.archived)
     .filter(d => {
@@ -1016,44 +1170,88 @@ function App() {
                 </div>
 
                 <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', margin: '0.5rem 0 0 0' }}>Compute & Image Location</h3>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Target Cluster Node</label>
-                    {isNodesLoading ? (
-                      <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching nodes...</div>
-                    ) : (
-                      <select className="form-control" value={formData.target_node} onChange={(e) => setFormData({ ...formData, target_node: e.target.value })} required>
-                        <option value="" disabled>-- Select Target Node --</option>
-                        {nodes.map(node => {
-                          const cpuText = node.cpu !== undefined && !isNaN(node.cpu) ? `CPU: ${(node.cpu * 100).toFixed(0)}%` : '';
-                          const memText = node.mem !== undefined && node.maxmem !== undefined && !isNaN(node.mem) && !isNaN(node.maxmem) 
-                            ? `RAM: ${(node.mem / (1024 ** 3)).toFixed(1)}GB / ${(node.maxmem / (1024 ** 3)).toFixed(1)}GB` 
-                            : '';
-                          const statusDetails = [cpuText, memText].filter(Boolean).join(', ');
-                          return (
-                            <option key={node.name} value={node.name}>
-                              {node.name} ({node.status === 'online' ? `Online${statusDetails ? `, ${statusDetails}` : ''}` : 'Offline'})
-                            </option>
-                          );
-                        })}
-                      </select>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Container Template (VZTmpl)</label>
-                    {isTemplatesLoading ? (
-                      <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching templates from Proxmox...</div>
-                    ) : (
-                      <select className="form-control" value={formData.template_file_id} onChange={(e) => setFormData({ ...formData, template_file_id: e.target.value })} required>
-                        <option value="" disabled>-- Select Template --</option>
-                        {templates.map(tmpl => (
-                          <option key={tmpl.volid} value={tmpl.volid}>
-                            {tmpl.volid.split('/').pop()} ({formatBytes(tmpl.size)})
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">Target Cluster Node</label>
+                  {isNodesLoading ? (
+                    <div className="form-control" style={{ color: 'var(--text-muted)' }}>Fetching nodes...</div>
+                  ) : (
+                    <select className="form-control" value={formData.target_node} onChange={(e) => setFormData({ ...formData, target_node: e.target.value })} required style={{ width: '100%', maxWidth: '550px' }}>
+                      <option value="" disabled>-- Select Target Node --</option>
+                      {nodes.map(node => {
+                        const cpuText = node.cpu !== undefined && !isNaN(node.cpu) ? `CPU: ${(node.cpu * 100).toFixed(0)}%` : '';
+                        const memText = node.mem !== undefined && node.maxmem !== undefined && !isNaN(node.mem) && !isNaN(node.maxmem) 
+                          ? `RAM: ${(node.mem / (1024 ** 3)).toFixed(1)}GB / ${(node.maxmem / (1024 ** 3)).toFixed(1)}GB` 
+                          : '';
+                        const statusDetails = [cpuText, memText].filter(Boolean).join(', ');
+                        return (
+                          <option key={node.name} value={node.name}>
+                            {node.name} ({node.status === 'online' ? `Online${statusDetails ? `, ${statusDetails}` : ''}` : 'Offline'})
                           </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ marginBottom: '0.75rem' }}>Select Container OS Template</label>
+                  {isTemplatesLoading ? (
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Fetching templates from Proxmox...</div>
+                  ) : templates.length === 0 ? (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '1rem 0' }}>No templates available on storage pool. Download one in the Settings tab.</div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem' }}>
+                      {templates.map(tmpl => {
+                        const name = tmpl.volid.split('/').pop();
+                        const isSelected = formData.template_file_id === tmpl.volid;
+                        
+                        let osName = 'Linux';
+                        let osColor = 'var(--accent-primary)';
+                        let osEmoji = '🐧';
+                        
+                        if (name.toLowerCase().includes('ubuntu')) {
+                          osName = 'Ubuntu';
+                          osColor = '#e95420';
+                          osEmoji = '🦊';
+                        } else if (name.toLowerCase().includes('debian')) {
+                          osName = 'Debian';
+                          osColor = '#d70a53';
+                          osEmoji = '🌀';
+                        } else if (name.toLowerCase().includes('alpine')) {
+                          osName = 'Alpine';
+                          osColor = '#0d597f';
+                          osEmoji = '🏔️';
+                        }
+                        
+                        return (
+                          <div
+                            key={tmpl.volid}
+                            onClick={() => setFormData({ ...formData, template_file_id: tmpl.volid })}
+                            style={{
+                              padding: '1.25rem 1rem',
+                              background: isSelected ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.005)',
+                              border: isSelected ? `2px solid ${osColor}` : '1px solid var(--glass-border)',
+                              borderRadius: 'var(--radius-md)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              boxShadow: isSelected ? `0 0 10px ${osColor}22` : 'none'
+                            }}
+                          >
+                            <span style={{ fontSize: '1.85rem' }}>{osEmoji}</span>
+                            <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.85rem' }}>{osName}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center', wordBreak: 'break-word', width: '100%', minHeight: '2.4rem', lineHeight: '1.2' }} title={name}>
+                              {name.replace('-standard', '').replace('-default', '')}
+                            </span>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{formatBytes(tmpl.size)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1335,6 +1533,93 @@ function App() {
               </div>
             </div>
 
+            {/* Cluster Resource Sizing Gauges Header with Toggle */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem', marginTop: '2rem' }}>
+              <h3 style={{ fontSize: '1.1rem', color: '#fff', margin: 0 }}>Cluster Resource Footprint</h3>
+              <button
+                type="button"
+                onClick={() => setShowClusterTotals(prev => !prev)}
+                className="btn btn-secondary"
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  fontSize: '0.75rem',
+                  background: showClusterTotals ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.03)',
+                  border: showClusterTotals ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                  color: showClusterTotals ? 'var(--accent-primary)' : '#fff',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  transition: 'all 0.2s'
+                }}
+              >
+                {showClusterTotals ? '📊 Showing: Physical Cluster Load' : '📦 Showing: Gantry Footprint Only'}
+              </button>
+            </div>
+
+             <div className="form-row" style={{ gap: '1.5rem', marginBottom: '2rem' }}>
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {showClusterTotals ? 'Total Cluster vCPUs' : 'Allocated vCPUs'}
+                  </span>
+                  <strong style={{ color: 'var(--accent-primary)' }}>
+                    {displayCPU} / {clusterCPU * 4} Cores
+                  </strong>
+                </div>
+                <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ 
+                    height: '100%', 
+                    width: `${Math.min((displayCPU / (clusterCPU * 4)) * 100, 100)}%`, 
+                    background: 'var(--accent-primary)', 
+                    borderRadius: '3px' 
+                  }} />
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {showClusterTotals 
+                    ? `Total allocated vCPUs across all VMs & containers in environment (${clusterCPU * 4} Cores max)` 
+                    : `Provisional limit based on 4:1 virtual-to-physical overcommit (${clusterCPU * 4} Cores)`
+                  }
+                </span>
+              </div>
+
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {showClusterTotals ? 'Total Cluster Memory Usage' : 'Allocated Memory'}
+                  </span>
+                  <strong style={{ color: 'var(--accent-info)' }}>
+                    {showClusterTotals 
+                      ? `${displayRAM >= 1024 ? `${(displayRAM / 1024).toFixed(1)} GB` : `${displayRAM} MB`} / ${clusterMemGB} GB` 
+                      : `${displayRAM >= 1024 ? `${(displayRAM / 1024).toFixed(1)} GB` : `${displayRAM} MB`}`
+                    }
+                  </strong>
+                </div>
+                <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min((displayRAM / (clusterMemGB * 1024)) * 100, 100)}%`, background: 'var(--accent-info)', borderRadius: '3px' }} />
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {showClusterTotals ? 'Total real-time memory usage of online cluster nodes' : `Provisional limit based on online cluster capacity (${clusterMemGB} GB)`}
+                </span>
+              </div>
+
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {showClusterTotals ? 'Total Cluster Disk Allocation' : 'Allocated Disk'}
+                  </span>
+                  <strong style={{ color: 'var(--accent-success)' }}>
+                    {showClusterTotals ? `${displayDisk} / ${clusterDiskGBRounded} GB` : `${displayDisk} GB`}
+                  </strong>
+                </div>
+                <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min((displayDisk / clusterDiskGBRounded) * 100, 100)}%`, background: 'var(--accent-success)', borderRadius: '3px' }} />
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {showClusterTotals ? 'Total storage capacity consumed by active pools' : `Provisional limit based on storage pools capacity (${clusterDiskGBRounded} GB)`}
+                </span>
+              </div>
+            </div>
+
             {/* Deployments Table */}
             <div className="glass-panel" style={{ padding: '2rem', overflowX: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
@@ -1358,9 +1643,19 @@ function App() {
               </div>
               
               {filteredDeployments.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
-                  <Icons.Info />
-                  <p style={{ marginTop: '0.5rem' }}>{searchTerm ? 'No deployments match your search term.' : (showArchived ? 'No archived instances found.' : 'No active container instances found. Start by deploying a new LXC container.')}</p>
+                <div className="fade-in" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem' }}>
+                  <div style={{ fontSize: '3rem', opacity: 0.85 }}>🚀</div>
+                  <div>
+                    <h3 style={{ color: '#fff', fontSize: '1.2rem', margin: 0 }}>No Containers Active</h3>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.35rem', maxWidth: '400px', marginInline: 'auto', lineHeight: '1.4' }}>
+                      {searchTerm ? 'No deployments match your search filter query.' : (showArchived ? 'No archived container instances found.' : 'You have not deployed any LXC container instances yet. Initialize one right away to get started.')}
+                    </p>
+                  </div>
+                  {!searchTerm && !showArchived && (
+                    <button type="button" className="btn btn-primary" onClick={() => setActiveTab('deploy')} style={{ padding: '0.6rem 1.5rem', fontSize: '0.85rem', height: '36px' }}>
+                      Deploy First LXC Container
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>
@@ -1379,8 +1674,8 @@ function App() {
                       {paginatedDeployments
                         .map((dep) => {
                           const isRunning = dep.proxmox_status?.status === 'running';
-                        return (
-                          <tr key={dep.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }} className="table-row-hover">
+                          return (
+                            <tr key={dep.id} onClick={(e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) setSelectedDrawerDep(dep); }} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s', cursor: 'pointer' }} className="table-row-hover">
                             
                             {/* ID & Name */}
                             <td style={{ padding: '1.25rem 0.75rem' }}>
@@ -1401,28 +1696,66 @@ function App() {
 
                             {/* Deployment Status */}
                             <td style={{ padding: '1.25rem 0.75rem' }}>
-                              <span style={{
-                                padding: '0.25rem 0.6rem',
-                                borderRadius: '4px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                textTransform: 'uppercase',
-                                background: dep.status === 'active' ? 'rgba(16, 185, 129, 0.15)' :
-                                            dep.status === 'deploying' ? 'rgba(99, 102, 241, 0.15)' :
-                                            dep.status === 'destroying' ? 'rgba(245, 158, 11, 0.15)' :
-                                            'rgba(239, 68, 68, 0.15)',
-                                color: dep.status === 'active' ? 'var(--accent-success)' :
-                                       dep.status === 'deploying' ? 'var(--accent-primary)' :
-                                       dep.status === 'destroying' ? 'var(--accent-warning)' :
-                                       'var(--accent-error)'
-                              }}>
-                                {dep.status}
-                              </span>
-                              {dep.proxmox_status?.status && (
-                                <div style={{ fontSize: '0.75rem', color: isRunning ? 'var(--accent-success)' : 'var(--text-muted)', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isRunning ? 'var(--accent-success)' : 'var(--text-muted)', display: 'inline-block' }}></span>
-                                  {dep.proxmox_status.status}
+                              {dep.status === 'deploying' ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                  <span style={{
+                                    padding: '0.25rem 0.6rem',
+                                    borderRadius: '4px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    textTransform: 'uppercase',
+                                    background: 'rgba(99, 102, 241, 0.15)',
+                                    color: 'var(--accent-primary)',
+                                    width: 'fit-content'
+                                  }}>
+                                    deploying
+                                  </span>
+                                  {(() => {
+                                    const steps = deployingLogs[dep.id] || [];
+                                    const completedCount = steps.filter(s => s.status === 'completed').length;
+                                    const activeStep = steps.find(s => s.status === 'active');
+                                    const pct = (completedCount / 5) * 100;
+                                    return (
+                                      <div style={{ minWidth: '120px' }}>
+                                        <div style={{ height: '4px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden', marginTop: '0.25rem' }}>
+                                          <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-primary)', borderRadius: '2px', transition: 'width 0.5s ease' }} />
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.15rem' }}>
+                                          <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '85px' }}>
+                                            {activeStep ? activeStep.name : 'Initializing...'}
+                                          </span>
+                                          <span onClick={(e) => { e.stopPropagation(); setSelectedPipelineDep(dep); }} style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 600 }}>
+                                            Track
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
+                              ) : (
+                                <>
+                                  <span style={{
+                                    padding: '0.25rem 0.6rem',
+                                    borderRadius: '4px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    textTransform: 'uppercase',
+                                    background: dep.status === 'active' ? 'rgba(16, 185, 129, 0.15)' :
+                                                dep.status === 'destroying' ? 'rgba(245, 158, 11, 0.15)' :
+                                                'rgba(239, 68, 68, 0.15)',
+                                    color: dep.status === 'active' ? 'var(--accent-success)' :
+                                           dep.status === 'destroying' ? 'var(--accent-warning)' :
+                                           'var(--accent-error)'
+                                  }}>
+                                    {dep.status}
+                                  </span>
+                                  {dep.proxmox_status?.status && (
+                                    <div style={{ fontSize: '0.75rem', color: isRunning ? 'var(--accent-success)' : 'var(--text-muted)', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isRunning ? 'var(--accent-success)' : 'var(--text-muted)', display: 'inline-block' }}></span>
+                                      {dep.proxmox_status.status}
+                                    </div>
+                                  )}
+                                </>
                               )}
                               {dep.status === 'active' && dep.proxmox_status?.status && (
                                 <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.4rem' }}>
@@ -1687,6 +2020,9 @@ function App() {
               </button>
               <button type="button" className={`nav-tab-btn ${settingsSubTab === 'ssh' ? 'active' : ''}`} onClick={() => setSettingsSubTab('ssh')} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
                 💻 Default SSH Keys
+              </button>
+              <button type="button" className={`nav-tab-btn ${settingsSubTab === 'theme' ? 'active' : ''}`} onClick={() => setSettingsSubTab('theme')} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                🖥️ Visual Theme
               </button>
             </div>
 
@@ -2005,6 +2341,84 @@ function App() {
                  </div>
                )}
 
+               {/* Section 5: Visual Theme Customizer */}
+               {settingsSubTab === 'theme' && (
+                 <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+                   <div>
+                     <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', marginBottom: '0.75rem' }}>Visual Theme Presets</h3>
+                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '1.25rem' }}>
+                       Select a visual personality gradient and glassmorphism transparency style for Gantry.
+                     </span>
+                     
+                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+                       {[
+                         { id: 'space', name: '🌌 Deep Space', desc: 'Indigo & Slate' },
+                         { id: 'violet', name: '⚛️ Cybernetic Violet', desc: 'Purple & Violet Glow' },
+                         { id: 'cyberpunk', name: '⚡ Obsidian Cyberpunk', desc: 'Obsidian & Neon Rose' }
+                       ].map(t => (
+                         <div
+                           key={t.id}
+                           onClick={() => setSelectedTheme(t.id)}
+                           style={{
+                             padding: '1.25rem',
+                             background: selectedTheme === t.id ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.02)',
+                             border: selectedTheme === t.id ? '2px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                             borderRadius: 'var(--radius-md)',
+                             cursor: 'pointer',
+                             textAlign: 'center',
+                             transition: 'all 0.2s ease',
+                             boxShadow: selectedTheme === t.id ? '0 0 15px rgba(99,102,241,0.2)' : 'none'
+                           }}
+                         >
+                           <div style={{ fontWeight: 600, color: '#fff', fontSize: '0.9rem', marginBottom: '0.25rem' }}>{t.name}</div>
+                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.desc}</div>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+
+                   <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: '0.5rem 0' }} />
+
+                   <div>
+                     <h3 style={{ fontSize: '1.15rem', color: 'var(--accent-primary)', marginBottom: '0.75rem' }}>Glassmorphism Intensity</h3>
+                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '1.25rem' }}>
+                       Adjust the backdrop blur radius density to control UI transparency.
+                     </span>
+                     
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                       <input
+                         type="range"
+                         min="0"
+                         max="24"
+                         step="2"
+                         value={blurIntensity}
+                         onChange={(e) => setBlurIntensity(parseInt(e.target.value))}
+                         style={{
+                           flex: 1,
+                           height: '6px',
+                           borderRadius: '3px',
+                           background: 'rgba(255,255,255,0.1)',
+                           outline: 'none',
+                           cursor: 'pointer'
+                         }}
+                       />
+                       <span style={{
+                         fontFamily: 'monospace',
+                         fontSize: '1rem',
+                         fontWeight: 'bold',
+                         color: 'var(--accent-primary)',
+                         background: 'rgba(99,102,241,0.1)',
+                         padding: '0.25rem 0.75rem',
+                         borderRadius: 'var(--radius-sm)',
+                         border: '1px solid rgba(99,102,241,0.2)'
+                       }}>
+                         {blurIntensity}px
+                       </span>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
                {/* Action Footer Buttons */}
                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between', marginTop: '2.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.5rem' }}>
                  <button type="button" className="btn btn-danger" onClick={handleClearConfig} style={{ background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.15) 0%, rgba(225, 29, 72, 0.25) 100%)', border: '1px solid var(--accent-error)', boxShadow: 'none' }}>
@@ -2051,6 +2465,304 @@ function App() {
               </button>
               <button className="btn btn-danger" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }} onClick={confirmDialog.onConfirm}>
                 Confirm Action
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Detailed Deployment Drawer */}
+      <div className={`slide-drawer ${selectedDrawerDep ? 'open' : ''}`}>
+        {selectedDrawerDep && (
+          <>
+            <div className="drawer-header">
+              <div>
+                <h3 style={{ color: '#fff', fontSize: '1.25rem', margin: 0 }}>
+                  Container Details
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  ID: {selectedDrawerDep.id}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }}
+                onClick={() => setSelectedDrawerDep(null)}
+              >
+                Close
+              </button>
+            </div>
+            
+            <div className="drawer-body">
+              {/* Core Parameters */}
+              <div>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                  System Configuration
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Hostname</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.hostname}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>VM ID</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.vm_id}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Target Node</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.target_node}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>CPU Cores</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.cpu_cores} Cores</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>RAM / Memory</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.memory} MB</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Storage Pool</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.disk_storage}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Disk Size</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.disk_size} GB</span>
+                  </div>
+                </div>
+              </div>
+
+              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: 0 }} />
+
+              {/* Networking Config */}
+              <div>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                  Networking Interfaces
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Bridge</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.network?.bridge || 'N/A'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>IPv4 Allocation</span>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>
+                      {selectedDrawerDep.network?.type === 'static' ? 'Static IP' : 'DHCP (Auto)'}
+                    </span>
+                  </div>
+                  {selectedDrawerDep.network?.type === 'static' && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>IPv4 Address</span>
+                        <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.network?.ip}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Gateway</span>
+                        <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.network?.gateway}</span>
+                      </div>
+                    </>
+                  )}
+                  {selectedDrawerDep.network?.vlan && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>VLAN Tag</span>
+                      <span style={{ color: '#fff', fontWeight: 500 }}>{selectedDrawerDep.network.vlan}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <hr style={{ border: '0', borderTop: '1px solid var(--glass-border)', margin: 0 }} />
+
+              {/* Provisioning Details */}
+              <div>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                  Provisioning Profile
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', marginBottom: '0.35rem' }}>Preconfigured Apps</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {selectedDrawerDep.predefined_apps && selectedDrawerDep.predefined_apps.length > 0 ? (
+                        selectedDrawerDep.predefined_apps.map(app => (
+                          <span key={app} style={{ fontSize: '0.75rem', background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#fff', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+                            {app}
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>None selected</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {selectedDrawerDep.custom_script && (
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', marginBottom: '0.35rem' }}>Custom Script</span>
+                      <pre style={{ margin: 0, padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', overflowX: 'auto', fontSize: '0.75rem', fontFamily: 'monospace', color: '#10b981', maxHeight: '120px' }}>
+                        {selectedDrawerDep.custom_script}
+                      </pre>
+                    </div>
+                  )}
+
+                  {selectedDrawerDep.ssh_keys && (
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', marginBottom: '0.35rem' }}>Authorized SSH Keys</span>
+                      <pre style={{ margin: 0, padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', overflowX: 'auto', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-secondary)', maxHeight: '80px' }}>
+                        {selectedDrawerDep.ssh_keys}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="drawer-footer">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '0.5rem 1.25rem' }}
+                onClick={() => setSelectedDrawerDep(null)}
+              >
+                Close Drawer
+              </button>
+              {selectedDrawerDep.status !== 'destroyed' && selectedDrawerDep.status !== 'destroying' && (
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  style={{ padding: '0.5rem 1.25rem' }}
+                  onClick={() => {
+                    setSelectedDrawerDep(null);
+                    handleDestroy(selectedDrawerDep.id);
+                  }}
+                >
+                  Destroy LXC
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Animated Deployment Pipeline Modal */}
+      {selectedPipelineDep && (
+        <div className="fade-in" style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(10px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', border: '1px solid var(--glass-border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ color: '#fff', fontSize: '1.3rem', margin: 0 }}>
+                  Deployment Pipeline
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Hostname: {selectedPipelineDep.hostname} (vmid: {selectedPipelineDep.vm_id})
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }}
+                onClick={() => setSelectedPipelineDep(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+
+            {/* Steps Track */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', position: 'relative', paddingLeft: '1rem' }}>
+              {/* Vertical connecting line */}
+              <div style={{
+                position: 'absolute',
+                left: '23px',
+                top: '15px',
+                bottom: '15px',
+                width: '2px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                zIndex: 1
+              }} />
+
+              {(deployingLogs[selectedPipelineDep.id] || [
+                { id: 1, name: 'Initializing Workspace', status: 'active' },
+                { id: 2, name: 'Checking OS Template', status: 'pending' },
+                { id: 3, name: 'Allocating System Resources', status: 'pending' },
+                { id: 4, name: 'Configuring Network Interface', status: 'pending' },
+                { id: 5, name: 'Running Post-Install Provisioning', status: 'pending' }
+              ]).map((step) => {
+                const isCompleted = step.status === 'completed';
+                const isActive = step.status === 'active';
+                const isFailed = step.status === 'failed';
+                
+                return (
+                  <div key={step.id} style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', zIndex: 2, position: 'relative' }}>
+                    {/* Circle Indicator */}
+                    <div style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '50%',
+                      background: isCompleted ? 'var(--accent-success)' :
+                                  isActive ? 'rgba(99, 102, 241, 0.1)' :
+                                  isFailed ? 'var(--accent-error)' :
+                                  '#080a10',
+                      border: isCompleted ? '2px solid var(--accent-success)' :
+                              isActive ? '2px solid var(--accent-primary)' :
+                              isFailed ? '2px solid var(--accent-error)' :
+                              '2px solid var(--glass-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: isCompleted ? 'var(--accent-primary)' :
+                             isActive ? 'var(--accent-primary)' :
+                             isFailed ? '#fff' :
+                             'var(--text-muted)',
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      boxShadow: isActive ? '0 0 12px rgba(99,102,241,0.3)' : 'none'
+                    }}>
+                      {isCompleted ? '✓' : isFailed ? '✗' : isActive ? '●' : step.id}
+                    </div>
+
+                    {/* Step Name */}
+                    <div>
+                      <div style={{
+                        fontSize: '0.9rem',
+                        fontWeight: 600,
+                        color: isActive || isCompleted ? '#fff' : 'var(--text-secondary)',
+                        transition: 'color 0.3s ease'
+                      }}>
+                        {step.name}
+                      </div>
+                      <span style={{
+                        fontSize: '0.75rem',
+                        color: isCompleted ? 'var(--accent-success)' :
+                               isActive ? 'var(--accent-primary)' :
+                               isFailed ? 'var(--accent-error)' :
+                               'var(--text-muted)'
+                      }}>
+                        {isCompleted ? 'Completed' :
+                         isActive ? 'Processing...' :
+                         isFailed ? 'Failed' :
+                         'Waiting...'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                onClick={() => setSelectedPipelineDep(null)}
+              >
+                Close View
               </button>
             </div>
           </div>

@@ -360,15 +360,19 @@ app.get('/api/proxmox/storages', async (req, res) => {
       .map(s => ({
         name: s.storage,
         type: s.type,
-        shared: s.shared
+        shared: s.shared,
+        active: s.active === 1 || s.active === true || s.active === undefined ? true : false,
+        total: s.total || 0,
+        used: s.used || 0,
+        avail: s.avail || 0
       }));
     res.json({ source: 'proxmox', storages });
   } catch (error) {
     console.error('Proxmox API fetch storages failed, using mock data:', error.message);
     const mockStorages = [
-      { name: 'local-lvm', type: 'lvmthin', shared: 0 },
-      { name: 'local', type: 'dir', shared: 0 },
-      { name: 'ceph-storage', type: 'rbd', shared: 1 }
+      { name: 'local-lvm', type: 'lvmthin', shared: 0, active: true, total: 400 * 1024 * 1024 * 1024, used: 150 * 1024 * 1024 * 1024, avail: 250 * 1024 * 1024 * 1024 },
+      { name: 'local', type: 'dir', shared: 0, active: true, total: 100 * 1024 * 1024 * 1024, used: 40 * 1024 * 1024 * 1024, avail: 60 * 1024 * 1024 * 1024 },
+      { name: 'ceph-storage', type: 'rbd', shared: 1, active: true, total: 1000 * 1024 * 1024 * 1024, used: 300 * 1024 * 1024 * 1024, avail: 700 * 1024 * 1024 * 1024 }
     ].filter(s => !excluded.includes(s.name.toLowerCase()));
     res.json({ source: 'mock', storages: mockStorages, error: error.message });
   }
@@ -772,10 +776,28 @@ app.post('/api/deployments/:id/unarchive', (req, res) => {
 app.get('/api/proxmox/nodes', async (req, res) => {
   try {
     const nodes = await proxmoxRequest('GET', '/nodes');
-    res.json({ source: 'proxmox', nodes: nodes.map(n => ({ name: n.node, status: n.status, cpu: n.cpu, mem: n.mem, maxmem: n.maxmem })) });
+    
+    // Sum allocated vCPUs (maxcpu) across all cluster VMs and containers
+    let totalClusterVCPUs = 0;
+    try {
+      const resources = await proxmoxRequest('GET', '/cluster/resources');
+      resources.forEach(r => {
+        if (r.type === 'qemu' || r.type === 'lxc') {
+          totalClusterVCPUs += (r.maxcpu || 0);
+        }
+      });
+    } catch (e) {
+      console.error('Failed to fetch cluster resources for vCPU sum:', e.message);
+    }
+    
+    res.json({ 
+      source: 'proxmox', 
+      nodes: nodes.map(n => ({ name: n.node, status: n.status, cpu: n.cpu, mem: n.mem, maxmem: n.maxmem, maxcpu: n.maxcpu })),
+      total_allocated_vcpus: totalClusterVCPUs
+    });
   } catch (err) {
     console.error('Proxmox nodes fetch failed:', err.message);
-    res.json({ source: 'mock', nodes: [{ name: 'pve', status: 'online', cpu: 0.12, mem: 4096000000, maxmem: 16000000000 }] });
+    res.json({ source: 'mock', nodes: [{ name: 'pve', status: 'online', cpu: 0.12, mem: 4096000000, maxmem: 16000000000, maxcpu: 64 }], total_allocated_vcpus: 12 });
   }
 });
 
