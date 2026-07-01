@@ -316,6 +316,7 @@ function App() {
         setConfig(data);
         setFormData(prev => ({
           ...prev,
+          target_node: data.node_name || prev.target_node,
           cpu_cores: data.default_cpu_cores !== undefined ? parseInt(data.default_cpu_cores) : prev.cpu_cores,
           memory: data.default_memory !== undefined ? parseInt(data.default_memory) : prev.memory,
           swap: data.default_swap !== undefined ? parseInt(data.default_swap) : prev.swap,
@@ -533,8 +534,17 @@ function App() {
       .then(data => {
         setNodes(data.nodes || []);
         setClusterAllocatedVCPUs(data.total_allocated_vcpus || 0);
-        if (data.nodes && data.nodes.length > 0 && !formData.target_node) {
-          setFormData(prev => ({ ...prev, target_node: data.nodes[0].name }));
+        if (data.nodes && data.nodes.length > 0) {
+          setFormData(prev => {
+            const hasDefaultNode = data.nodes.some(n => n.name === config.node_name);
+            const defaultNode = hasDefaultNode ? config.node_name : data.nodes[0].name;
+            return {
+              ...prev,
+              target_node: prev.target_node && data.nodes.some(n => n.name === prev.target_node)
+                ? prev.target_node
+                : defaultNode
+            };
+          });
         }
       })
       .catch(() => {})
@@ -579,6 +589,7 @@ function App() {
       .then(res => res.json())
       .then(data => {
         showNotification(data.message);
+        setFormData(prev => ({ ...prev, target_node: config.node_name }));
         loadProxmoxData();
       })
       .catch(() => showNotification('Failed to save settings', 'error'));

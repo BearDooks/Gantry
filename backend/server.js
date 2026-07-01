@@ -668,7 +668,11 @@ ${deployConfig.custom_script}
     disk_size: deployConfig.disk_size,
     target_node: targetNode,
     status: 'deploying',
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    predefined_apps: apps,
+    custom_script: deployConfig.custom_script,
+    ssh_keys: deployConfig.ssh_keys,
+    network: deployConfig.network
   };
   db.deployments.push(newDeployment);
   saveDb(db);
